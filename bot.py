@@ -88,9 +88,16 @@ class Bot(Client):
         await super().stop()
         logger.info("Bot Stopped. Bye!")
 
-# बॉट को रन करें
+# -------------------------------------------------------------
+# यहाँ मुख्य सुधार (Fix) है
+# -------------------------------------------------------------
 if __name__ == "__main__":
     try:
+        # Python 3.11+ के लिए Event Loop Fix
+        if not asyncio.get_event_loop_policy().get_event_loop().is_running():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
         app = Bot()
         app.run()
     except Exception as e:
