@@ -1,127 +1,97 @@
 import logging
+import logging.config
 import os
 import time
 import asyncio
-import uvloop
-from hydrogram import types
-from hydrogram import Client
-from hydrogram.errors import FloodWait, MessageNotModified
+from hydrogram import Client, __version__
+from hydrogram.raw.all import layer
+from hydrogram.enums import ParseMode
+from hydrogram.errors import FloodWait
 from aiohttp import web
-from typing import Union, Optional, AsyncGenerator
-# 'web' फ़ोल्डर से web_app इम्पोर्ट करें
-from web import web_app 
-# सुनिश्चित करें कि ये वैरिएबल्स os.environ से आ रहे हैं (info.py में)
+from web import web_app
 from info import (
-    LOG_CHANNEL, API_ID, DATA_DATABASE_URL, 
-    API_HASH, BOT_TOKEN, PORT, FILES_DATABASE_URL
-) 
+    API_ID, API_HASH, BOT_TOKEN, LOG_CHANNEL, 
+    PORT, ADMINS, FILES_DATABASE_URL, DATA_DATABASE_URL
+)
 from utils import temp, check_premium
 from database.users_chats_db import db
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+from typing import Union, Optional, AsyncGenerator
+from hydrogram import types
 
-# लॉगिंग सेटअप
+# लॉगिंग कॉन्फ़िगरेशन
 logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logging.getLogger('hydrogram').setLevel(logging.ERROR)
-logger = logging.getLogger(__name__)
+logging.getLogger("hydrogram").setLevel(logging.WARNING)
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
 
-uvloop.install()
+logger = logging.getLogger(__name__)
 
 class Bot(Client):
     def __init__(self):
         super().__init__(
-            name='Auto_Filter_Bot',
+            name="Auto_Filter_Bot",
             api_id=API_ID,
             api_hash=API_HASH,
             bot_token=BOT_TOKEN,
-            plugins={"root": "plugins"}
+            plugins={"root": "plugins"},
+            workers=50,
+            sleep_threshold=10
         )
-        self.db_client = None # MongoDB client instance
-        self.files_db_client = None
 
     async def start(self):
         await super().start()
-        temp.START_TIME = time.time()
-        
-        # --- 1. MongoDB Connection Setup ---
-        try:
-            self.db_client = MongoClient(DATA_DATABASE_URL, server_api=ServerApi('1'))
-            if FILES_DATABASE_URL and FILES_DATABASE_URL != DATA_DATABASE_URL:
-                 self.files_db_client = MongoClient(FILES_DATABASE_URL, server_api=ServerApi('1'))
-            
-            self.db_client.admin.command('ping')
-            if self.files_db_client:
-                self.files_db_client.admin.command('ping')
-            logger.info("MongoDB Connection Successful.")
-        except Exception as e:
-            logger.error(f"MongoDB Connection Error. Exiting now: {e}")
-            exit()
-            
-        b_users, b_chats = await db.get_banned()
-        temp.BANNED_USERS = b_users
-        temp.BANNED_CHATS = b_chats
-
-        # --- 2. Restart Message Handling ---
-        if os.path.exists('restart.txt'):
-            with open("restart.txt") as file:
-                chat_id, msg_id = map(int, file)
-            try:
-                await self.edit_message_text(
-                    chat_id=chat_id, 
-                    message_id=msg_id, 
-                    text='**✅ Successfully Restarted!**'
-                )
-            except (FloodWait, MessageNotModified) as e:
-                logger.warning(f"Failed to edit restart message due to: {e}")
-            except Exception:
-                pass # अन्य त्रुटियों को नजरअंदाज करें
-            os.remove('restart.txt')
-
-        temp.BOT = self
         me = await self.get_me()
         temp.ME = me.id
         temp.U_NAME = me.username
         temp.B_NAME = me.first_name
+        temp.BOT = self
         
-        # --- 3. Web Server & Background Tasks ---
-        app_runner = web.AppRunner(web_app)
-        await app_runner.setup()
-        await web.TCPSite(app_runner, "0.0.0.0", PORT).start()
+        # Banned Users/Chats Load करें
+        b_users, b_chats = await db.get_banned()
+        temp.BANNED_USERS = b_users
+        temp.BANNED_CHATS = b_chats
+        
+        # Restart Message Logic
+        if os.path.exists('restart.txt'):
+            try:
+                with open('restart.txt', 'r') as file:
+                    chat_id, msg_id = map(int, file.read().split())
+                await self.edit_message_text(chat_id=chat_id, message_id=msg_id, text="<b>✅ Successfully Restarted!</b>")
+            except Exception as e:
+                logger.error(f"Failed to edit restart message: {e}")
+            finally:
+                os.remove('restart.txt')
 
-        asyncio.create_task(self.run_background_tasks())
+        # Web Server शुरू करें
+        app = web.AppRunner(web_app)
+        await app.setup()
+        await web.TCPSite(app, "0.0.0.0", PORT).start()
+        logger.info(f"Web Server Started on Port {PORT}")
 
+        # Premium Check Task
+        asyncio.create_task(check_premium(self))
+
+        # Log Channel पर मैसेज
         try:
             await self.send_message(
-                chat_id=LOG_CHANNEL, 
-                text=f"<b>{me.mention} Restarted! 🤖</b>"
+                chat_id=LOG_CHANNEL,
+                text=f"<b>🔥 {me.mention} Bot Restarted!</b>\n\n<b>Hydrogram Version:</b> <code>v{__version__}</code>\n<b>Layer:</b> <code>{layer}</code>"
             )
         except Exception as e:
-            logger.error(f"Make sure bot admin in LOG_CHANNEL. Exiting now: {e}")
-            exit()
-            
-        logger.info(f"@{me.username} is started now ✓")
+            logger.error(f"Bot failed to send message to LOG_CHANNEL: {e}")
+
+        logger.info(f"@{me.username} Started Successfully! 🚀")
 
     async def stop(self, *args):
-        if self.db_client:
-            self.db_client.close()
-        if self.files_db_client:
-             self.files_db_client.close()
-        logger.info("MongoDB connection closed.")
         await super().stop()
-        logger.info("Bot Stopped! Bye...")
-        
-    async def run_background_tasks(self):
-        """सभी बैकग्राउंड कार्यों को चलाने के लिए सुरक्षित रैपर।"""
-        try:
-            await check_premium(self)
-        except Exception as e:
-            logger.error(f"Premium check task failed: {e}")
+        logger.info("Bot Stopped. Bye!")
 
-# --- कस्टम iter_messages को हटा दिया गया है ---
-
-app = Bot()
-app.run()
+# बॉट को रन करें
+if __name__ == "__main__":
+    try:
+        app = Bot()
+        app.run()
+    except Exception as e:
+        logger.error(f"Runtime Error: {e}")
