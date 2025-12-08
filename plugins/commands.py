@@ -22,7 +22,7 @@ from info import (
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
     is_check_admin, get_shortlink, get_verify_status, update_verify_status, 
-    get_readable_time, get_wish
+    get_readable_time, get_wish, temp
 )
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,8 @@ async def start(client, message):
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
             InlineKeyboardButton('📚 Status 📊', callback_data='stats')
         ],[
-            InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{client.username}?start=premium")
+            # यहाँ temp.U_NAME का उपयोग किया गया है
+            InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{temp.U_NAME}?start=premium")
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
         await message.reply_photo(
@@ -135,7 +136,7 @@ async def start(client, message):
             reply_markup = None
         else:
             btn = [[
-                InlineKeyboardButton("📌 Get File 📌", url=f'https://t.me/{client.username}?start={verify_status["link"]}')
+                InlineKeyboardButton("📌 Get File 📌", url=f'https://t.me/{temp.U_NAME}?start={verify_status["link"]}')
             ]]
             reply_markup = InlineKeyboardMarkup(btn)
         await message.reply(f"✅ You successfully verified until: {get_readable_time(VERIFY_EXPIRE)}", reply_markup=reply_markup, protect_content=True)
@@ -145,7 +146,7 @@ async def start(client, message):
     if IS_VERIFY and not verify_status['is_verified'] and not await is_premium(message.from_user.id, client):
         token = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
         await update_verify_status(message.from_user.id, verify_token=token, link="" if mc == 'inline_verify' else mc)
-        link = await get_shortlink(SHORTLINK_URL, SHORTLINK_API, f'https://t.me/{client.username}?start=verify_{token}')
+        link = await get_shortlink(SHORTLINK_URL, SHORTLINK_API, f'https://t.me/{temp.U_NAME}?start=verify_{token}')
         btn = [[
             InlineKeyboardButton("🧿 Verify 🧿", url=link)
         ],[
@@ -174,8 +175,6 @@ async def start(client, message):
         except ValueError:
             return await message.reply("Invalid link format")
             
-        # Note: temp.FILES logic usually relies on active memory, might need persistent storage for deep links to work reliably after restart
-        # For now keeping as is assuming temp is populated via other means or this is immediate interaction
         from utils import temp
         files = temp.FILES.get(key)
         if not files:
@@ -234,7 +233,7 @@ async def start(client, message):
         
     settings = await get_settings(int(grp_id))
     if type_ != 'shortlink' and settings['shortlink'] and not await is_premium(message.from_user.id, client):
-        link = await get_shortlink(settings['url'], settings['api'], f"https://t.me/{client.username}?start=shortlink_{grp_id}_{file_id}")
+        link = await get_shortlink(settings['url'], settings['api'], f"https://t.me/{temp.U_NAME}?start=shortlink_{grp_id}_{file_id}")
         btn = [[
             InlineKeyboardButton("♻️ Get File ♻️", url=link)
         ],[
@@ -434,6 +433,4 @@ async def plan(client, message):
     ]]
     await message.reply(script.PLAN_TXT.format(PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME), reply_markup=InlineKeyboardMarkup(btn))
 
-# ... (add_prm, rm_prm, prm_list, set_fsub, set_req_fsub, on/off filters are fine, 
-# just make sure to use 'await' for DB calls if they were missing in previous copies)
-# I will exclude them for brevity unless requested, but the pattern is consistent.
+# ... बाकी कोड (add_prm, rm_prm etc.) वैसा ही रहने दें ...
