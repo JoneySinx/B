@@ -19,6 +19,7 @@ from info import (
     VERIFY_TUTORIAL, VERIFY_EXPIRE, SHORTLINK_API, SHORTLINK_URL, DELETE_TIME, 
     SUPPORT_LINK, UPDATES_LINK, LOG_CHANNEL, PICS, IS_STREAM, REACTIONS, PM_FILE_DELETE_TIME
 )
+# temp को यहाँ ऊपर सही से इम्पोर्ट किया गया है
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
     is_check_admin, get_shortlink, get_verify_status, update_verify_status, 
@@ -100,7 +101,6 @@ async def start(client, message):
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
             InlineKeyboardButton('📚 Status 📊', callback_data='stats')
         ],[
-            # यहाँ temp.U_NAME का उपयोग किया गया है
             InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{temp.U_NAME}?start=premium")
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
@@ -175,7 +175,7 @@ async def start(client, message):
         except ValueError:
             return await message.reply("Invalid link format")
             
-        from utils import temp
+        # FIX: यहां से 'from utils import temp' हटा दिया गया है
         files = temp.FILES.get(key)
         if not files:
             return await message.reply('No Such All Files Exist! (Link expired or bot restarted)')
@@ -433,4 +433,18 @@ async def plan(client, message):
     ]]
     await message.reply(script.PLAN_TXT.format(PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME), reply_markup=InlineKeyboardMarkup(btn))
 
-# ... बाकी कोड (add_prm, rm_prm etc.) वैसा ही रहने दें ...
+@Client.on_message(filters.command('add_prm') & filters.user(ADMINS))
+async def add_prm(bot, message):
+    if not IS_PREMIUM:
+        return await message.reply('Premium feature was disabled')
+    try:
+        _, user_id, d = message.text.split(' ')
+    except:
+        return await message.reply('Usage: /add_prm user_id 1d')
+    try:
+        d = int(d[:-1])
+    except:
+        return await message.reply('Not valid days, use: 1d, 7d, 30d, 365d, etc...')
+    try:
+        user = await bot.get_users(user_id)
+    ex
