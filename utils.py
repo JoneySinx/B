@@ -9,10 +9,11 @@ from hydrogram.types import InlineKeyboardButton
 from hydrogram import enums
 from info import ADMINS, IS_PREMIUM, TIME_ZONE
 from database.users_chats_db import db
-from shortzy import Shortzy
 
 # लॉगिंग सेट करें
 logger = logging.getLogger(__name__)
+
+# NOTE: Shortzy और Cinemagoer के इम्पोर्ट्स हटा दिए गए हैं
 
 class temp(object):
     START_TIME = 0
@@ -30,11 +31,10 @@ class temp(object):
     BOT = None
     PREMIUM = {}
 
-# --- SUBSCRIPTION CHECKS (Request Feature Removed) ---
+# --- SUBSCRIPTION CHECKS ---
 
 async def is_subscribed(bot, query):
     btn = []
-    # प्रीमियम यूजर्स के लिए चेक स्किप करें
     if await is_premium(query.from_user.id, bot):
         return btn
         
@@ -42,7 +42,6 @@ async def is_subscribed(bot, query):
     if not stg:
         return btn
         
-    # सिर्फ Force Subscribe Check रखें (Request हटा दिया गया है)
     if stg.get('FORCE_SUB_CHANNELS'):
         for id in stg.get('FORCE_SUB_CHANNELS').split(' '):
             try:
@@ -79,6 +78,16 @@ def upload_image(file_path):
         logger.error(f"Upload Image Error: {e}")
     return None
 
+# --- DUMMY FUNCTIONS (IMDb & Shortlink Removed) ---
+
+async def get_poster(query, bulk=False, id=False, file=None):
+    # IMDb फीचर हटा दिया गया है, इसलिए यह हमेशा None रिटर्न करेगा
+    return None
+
+async def get_shortlink(url, api, link):
+    # Shortlink फीचर हटा दिया गया है, इसलिए यह ओरिजिनल लिंक वापस करेगा
+    return link
+
 # --- VERIFICATION & PREMIUM ---
 
 async def get_verify_status(user_id):
@@ -104,7 +113,6 @@ async def is_premium(user_id, bot):
         return True
     mp = await db.get_plan(user_id)
     if mp['premium']:
-        # Fix: Offset-Aware Datetime Check
         expire_date = mp['expire']
         if isinstance(expire_date, datetime):
             if expire_date.tzinfo is None:
@@ -210,15 +218,6 @@ def list_to_str(k):
     if not k: return "N/A"
     elif len(k) == 1: return str(k[0])
     else: return ', '.join(f'{elem}' for elem in k)
-    
-async def get_shortlink(url, api, link):
-    try:
-        shortzy = Shortzy(api_key=api, base_site=url)
-        link = await shortzy.convert(link)
-        return link
-    except Exception as e:
-        logger.error(f"Shortlink Error: {e}")
-        return link
 
 def get_readable_time(seconds):
     periods = [('d', 86400), ('h', 3600), ('m', 60), ('s', 1)]
