@@ -37,7 +37,6 @@ class temp(object):
 
 async def is_subscribed(bot, query):
     btn = []
-    # प्रीमियम यूजर्स के लिए चेक स्किप करें
     if await is_premium(query.from_user.id, bot):
         return btn
         
@@ -45,21 +44,17 @@ async def is_subscribed(bot, query):
     if not stg:
         return btn
         
-    # Force Subscribe Check
     if stg.get('FORCE_SUB_CHANNELS'):
         for id in stg.get('FORCE_SUB_CHANNELS').split(' '):
             try:
                 chat = await bot.get_chat(int(id))
                 await bot.get_chat_member(int(id), query.from_user.id)
             except UserNotParticipant:
-                btn.append(
-                    [InlineKeyboardButton(f'Join : {chat.title}', url=chat.invite_link)]
-                )
+                btn.append([InlineKeyboardButton(f'Join : {chat.title}', url=chat.invite_link)])
             except Exception as e:
                 logger.error(f"Force Sub Error: {e}")
                 pass
     
-    # Request Force Subscribe Check
     if stg.get('REQUEST_FORCE_SUB_CHANNELS') and not await db.find_join_req(query.from_user.id):
         try:
             id = int(stg.get('REQUEST_FORCE_SUB_CHANNELS'))
@@ -68,9 +63,7 @@ async def is_subscribed(bot, query):
         except UserNotParticipant:
             try:
                 url = await bot.create_chat_invite_link(id, creates_join_request=True)
-                btn.append(
-                    [InlineKeyboardButton(f'Request : {chat.title}', url=url.invite_link)]
-                )
+                btn.append([InlineKeyboardButton(f'Request : {chat.title}', url=url.invite_link)])
             except Exception as e:
                 logger.error(f"Req Force Sub Error: {e}")
                 pass
@@ -115,61 +108,43 @@ async def get_poster(query, bulk=False, id=False, file=None):
         else:
             year = None
         
-        # Blocking call handled by asyncio.to_thread
         func = functools.partial(imdb.search_movie, title.lower(), results=10)
-        try:
-            movieid = await asyncio.to_thread(func)
+        try: movieid = await asyncio.to_thread(func)
         except Exception as e:
             logger.error(f"IMDb Search Error: {e}")
             return None
         
-        if not movieid:
-            return None
+        if not movieid: return None
         if year:
             filtered = list(filter(lambda k: str(k.get('year')) == str(year), movieid))
-            if not filtered:
-                filtered = movieid
-        else:
-            filtered = movieid
+            if not filtered: filtered = movieid
+        else: filtered = movieid
         
         movieid = list(filter(lambda k: k.get('kind') in ['movie', 'tv series'], filtered))
-        if not movieid:
-            movieid = filtered
-        if bulk:
-            return movieid
-        
-        if not movieid:
-            return None
-            
+        if not movieid: movieid = filtered
+        if bulk: return movieid
+        if not movieid: return None
         movieid = movieid[0].movieID
     else:
         movieid = query
         
-    # Blocking call handled by asyncio.to_thread
     func_get = functools.partial(imdb.get_movie, movieid)
-    try:
-        movie = await asyncio.to_thread(func_get)
+    try: movie = await asyncio.to_thread(func_get)
     except Exception as e:
         logger.error(f"IMDb Get Movie Error: {e}")
         return None
 
-    if movie.get("original air date"):
-        date = movie["original air date"]
-    elif movie.get("year"):
-        date = movie.get("year")
-    else:
-        date = "N/A"
+    if movie.get("original air date"): date = movie["original air date"]
+    elif movie.get("year"): date = movie.get("year")
+    else: date = "N/A"
         
     plot = ""
     if not LONG_IMDB_DESCRIPTION:
         plot = movie.get('plot')
-        if plot and len(plot) > 0:
-            plot = plot[0]
+        if plot and len(plot) > 0: plot = plot[0]
     else:
         plot = movie.get('plot outline')
-        
-    if plot and len(plot) > 800:
-        plot = plot[0:800] + "..."
+    if plot and len(plot) > 800: plot = plot[0:800] + "..."
         
     return {
         'title': movie.get('title'),
@@ -201,7 +176,7 @@ async def get_poster(query, bulk=False, id=False, file=None):
         'url': f'https://www.imdb.com/title/tt{movieid}'
     }
 
-# --- VERIFICATION & PREMIUM ---
+# --- VERIFICATION & PREMIUM (Fixed Logic) ---
 
 async def get_verify_status(user_id):
     verify = temp.VERIFICATIONS.get(user_id)
@@ -226,59 +201,64 @@ async def is_premium(user_id, bot):
         return True
     mp = await db.get_plan(user_id)
     if mp['premium']:
-        if mp['expire'] < datetime.now(timezone.utc):
-            try:
-                await bot.send_message(user_id, f"Your premium {mp['plan']} plan is expired, use /plan to activate again")
-            except: pass
-            
-            mp['expire'] = ''
-            mp['plan'] = ''
+        # FIX: Handle Offset-Naive vs Offset-Aware
+        expire_date = mp['expire']
+        if isinstance(expire_date, datetime):
+            if expire_date.tzinfo is None:
+                # If DB date has no timezone, treat it as UTC
+                expire_date = expire_date.replace(tzinfo=timezone.utc)
+                
+            if expire_date < datetime.now(timezone.utc):
+                try: await bot.send_message(user_id, f"Your premium {mp['plan']} plan is expired, use /plan to activate again")
+                except: pass
+                
+                mp['expire'] = ''
+                mp['plan'] = ''
+                mp['premium'] = False
+                await db.update_plan(user_id, mp)
+                return False
+            return True
+        else:
+            # If expire date is invalid/empty but premium is True, treat as expired
             mp['premium'] = False
             await db.update_plan(user_id, mp)
             return False
-        return True
     else:
         return False
 
 async def check_premium(bot):
     while True:
-        await asyncio.sleep(1200) # Sleep first
+        await asyncio.sleep(1200)
         try:
-            # Using async for cursor
             async for p in await db.get_premium_users():
                 if not p['status']['premium']:
                     continue
                 mp = p['status']
-                # Ensure timezone awareness
+                
+                # FIX: Handle Offset-Naive vs Offset-Aware
                 expire_date = mp['expire']
-                if expire_date.tzinfo is None:
-                    expire_date = expire_date.replace(tzinfo=timezone.utc)
+                if isinstance(expire_date, datetime):
+                    if expire_date.tzinfo is None:
+                        expire_date = expire_date.replace(tzinfo=timezone.utc)
 
-                if expire_date < datetime.now(timezone.utc):
-                    try:
-                        await bot.send_message(
-                            p['id'],
-                            f"Your premium {mp['plan']} plan is expired, use /plan to activate again"
-                        )
-                    except Exception:
-                        pass
-                    mp['expire'] = ''
-                    mp['plan'] = ''
-                    mp['premium'] = False
-                    await db.update_plan(p['id'], mp)
+                    if expire_date < datetime.now(timezone.utc):
+                        try: await bot.send_message(p['id'], f"Your premium {mp['plan']} plan is expired, use /plan to activate again")
+                        except: pass
+                        mp['expire'] = ''
+                        mp['plan'] = ''
+                        mp['premium'] = False
+                        await db.update_plan(p['id'], mp)
         except Exception as e:
             logger.error(f"Check Premium Error: {e}")
 
-# --- BROADCASTING (This was missing!) ---
+# --- BROADCASTING ---
 
 async def broadcast_messages(user_id, message, pin):
     try:
         m = await message.copy(chat_id=user_id)
         if pin:
-            try:
-                await m.pin(both_sides=True)
-            except Exception:
-                pass
+            try: await m.pin(both_sides=True)
+            except: pass
         return "Success"
     except FloodWait as e:
         await asyncio.sleep(e.value)
@@ -286,23 +266,20 @@ async def broadcast_messages(user_id, message, pin):
     except (UserIsBlocked, InputUserDeactivated):
         await db.delete_user(int(user_id))
         return "Error"
-    except Exception as e:
+    except Exception:
         return "Error"
 
 async def groups_broadcast_messages(chat_id, message, pin):
     try:
         k = await message.copy(chat_id=chat_id)
         if pin:
-            try:
-                await k.pin()
-            except Exception:
-                pass
+            try: await k.pin()
+            except: pass
         return "Success"
     except FloodWait as e:
         await asyncio.sleep(e.value)
         return await groups_broadcast_messages(chat_id, message, pin)
-    except Exception as e:
-        # await db.delete_chat(chat_id) # Optional: remove invalid groups
+    except Exception:
         return "Error"
 
 # --- SETTINGS & HELPERS ---
@@ -330,12 +307,9 @@ def get_size(size):
     return "%.2f %s" % (size, units[i])
 
 def list_to_str(k):
-    if not k:
-        return "N/A"
-    elif len(k) == 1:
-        return str(k[0])
-    else:
-        return ', '.join(f'{elem}' for elem in k)
+    if not k: return "N/A"
+    elif len(k) == 1: return str(k[0])
+    else: return ', '.join(f'{elem}' for elem in k)
     
 async def get_shortlink(url, api, link):
     try:
@@ -358,26 +332,14 @@ def get_readable_time(seconds):
 def get_wish():
     time = datetime.now(pytz.timezone(TIME_ZONE))
     now = time.strftime("%H")
-    if now < "12":
-        status = "ɢᴏᴏᴅ ᴍᴏʀɴɪɴɢ 🌞"
-    elif now < "18":
-        status = "ɢᴏᴏᴅ ᴀꜰᴛᴇʀɴᴏᴏɴ 🌗"
-    else:
-        status = "ɢᴏᴏᴅ ᴇᴠᴇɴɪɴɢ 🌘"
-    return status
+    if now < "12": return "ɢᴏᴏᴅ ᴍᴏʀɴɪɴɢ 🌞"
+    elif now < "18": return "ɢᴏᴏᴅ ᴀꜰᴛᴇʀɴᴏᴏɴ 🌗"
+    else: return "ɢᴏᴏᴅ ᴇᴠᴇɴɪɴɢ 🌘"
     
 def get_seconds(time_string):
     match = re.match(r'(\d+)([a-zA-Z]+)', time_string)
-    if not match:
-        return 0
-        
+    if not match: return 0
     value = int(match.group(1))
     unit = match.group(2).lower()
-    
-    unit_multipliers = {
-        's': 1, 'min': 60, 'h': 3600, 'hour': 3600,
-        'd': 86400, 'day': 86400, 'month': 86400 * 30,
-        'year': 86400 * 365
-    }
-    
+    unit_multipliers = {'s': 1, 'min': 60, 'h': 3600, 'hour': 3600, 'd': 86400, 'day': 86400, 'month': 86400 * 30, 'year': 86400 * 365}
     return value * unit_multipliers.get(unit, 0)
