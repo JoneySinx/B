@@ -11,6 +11,7 @@ from hydrogram.file_id import FileId, FileType, ThumbnailSource
 
 logger = logging.getLogger(__name__)
 
+# सेशन लॉक (Race conditions रोकने के लिए)
 session_lock = asyncio.Lock()
 
 async def chunk_size(length):
@@ -134,8 +135,10 @@ class TGCustomYield:
 
         r = None
         
-        # FIX: Retry logic for the initial request
-        for i in range(3):
+        # ---------------------------------------------------------
+        # FIX: Stronger Retry Logic (5 Attempts)
+        # ---------------------------------------------------------
+        for attempt in range(5):
             try:
                 r = await media_session.send(
                     raw.functions.upload.GetFile(
@@ -145,12 +148,14 @@ class TGCustomYield:
                     ),
                 )
                 break
-            except (TimeoutError, RPCError):
-                await asyncio.sleep(0.5)
+            except (TimeoutError, RPCError) as e:
+                if attempt == 4: # Last attempt
+                    logger.error(f"Failed to fetch initial chunk after 5 attempts: {e}")
+                    return
+                await asyncio.sleep(1) # Wait 1 second before retry
                 continue
         
         if r is None:
-            logger.error("Failed to fetch initial chunk after retries.")
             return
 
         if isinstance(r, raw.types.upload.File):
@@ -170,9 +175,9 @@ class TGCustomYield:
                 current_part += 1
 
                 if current_part <= part_count:
-                    # FIX: Retry logic for subsequent chunks
+                    # Retry logic for subsequent chunks
                     success = False
-                    for i in range(3):
+                    for attempt in range(5):
                         try:
                             r = await media_session.send(
                                 raw.functions.upload.GetFile(
@@ -184,11 +189,11 @@ class TGCustomYield:
                             success = True
                             break
                         except (TimeoutError, RPCError):
-                            await asyncio.sleep(0.5)
+                            await asyncio.sleep(1)
                             continue
                     
                     if not success:
-                        logger.error(f"Failed to fetch chunk {current_part} after retries. Stopping stream.")
+                        logger.error(f"Stream aborted: Could not fetch chunk {current_part} after 5 retries.")
                         break
 
     async def download_as_bytesio(self, media_msg: Message):
@@ -203,9 +208,9 @@ class TGCustomYield:
         m_file = bytearray()
 
         while True:
-            # FIX: Retry logic for bytesio download
             r = None
-            for i in range(3):
+            # Retry logic for download
+            for attempt in range(5):
                 try:
                     r = await media_session.send(
                         raw.functions.upload.GetFile(
@@ -216,7 +221,7 @@ class TGCustomYield:
                     )
                     break
                 except (TimeoutError, RPCError):
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(1)
                     continue
             
             if r is None:
