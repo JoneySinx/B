@@ -193,26 +193,22 @@ async def media_watch(message_id):
         mime_type = getattr(media, 'mime_type', 'application/octet-stream')
         
         # 3. Stream Link Generation
-        # सुरक्षित URL ज्वाइनिंग
         base_url = URL[:-1] if URL.endswith('/') else URL
         src = f"{base_url}/download/{message_id}"
 
-        # 4. Check if streamable (Video or Audio)
-        # कुछ MKV फाइलें Document के रूप में होती हैं, इसलिए हम mime_type चेक करेंगे
+        # 4. Check if streamable
         is_video = 'video' in mime_type
         is_audio = 'audio' in mime_type
         
         if is_video or is_audio:
-            # XSS Protection: HTML Escape
             safe_heading = html.escape(f'Watch - {file_name}')
             safe_filename = html.escape(file_name)
             
-            return watch_tmplt.format(
-                heading=safe_heading,
-                file_name=safe_filename,
-                src=src,
-                mime_type=mime_type
-            )
+            # FIX: Using .replace() instead of .format() to avoid CSS brace conflicts
+            return watch_tmplt.replace('{heading}', safe_heading) \
+                              .replace('{file_name}', safe_filename) \
+                              .replace('{src}', src) \
+                              .replace('{mime_type}', mime_type)
         else:
             return f'''
             <!DOCTYPE html>
