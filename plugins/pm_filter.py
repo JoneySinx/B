@@ -30,12 +30,8 @@ CAP = {}
 
 @Client.on_message(filters.private & filters.text & filters.incoming)
 async def pm_search(client, message):
-    if message.text.startswith("/"):
-        return
-        
-    # --- STRICT PREMIUM CHECK ---
-    if not await is_premium(message.from_user.id, client):
-        return
+    if message.text.startswith("/"): return
+    if not await is_premium(message.from_user.id, client): return
 
     stg = await db.get_bot_sttgs()
     if not stg: stg = {}
@@ -49,10 +45,7 @@ async def pm_search(client, message):
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def group_search(client, message):
     user_id = message.from_user.id if message.from_user else 0
-    
-    # --- STRICT PREMIUM CHECK ---
-    if not await is_premium(user_id, client):
-        return
+    if not await is_premium(user_id, client): return
 
     stg = await db.get_bot_sttgs()
     if not stg: stg = {'AUTO_FILTER': True}
@@ -62,21 +55,18 @@ async def group_search(client, message):
             files, offset, total = await get_search_results(message.text)
             if files:
                 btn = [[InlineKeyboardButton("Here", url=FILMS_LINK)]]
-                await message.reply_text(f'Total {total} results found in this group', reply_markup=InlineKeyboardMarkup(btn))
+                await message.reply_text(f'Total {total} results found', reply_markup=InlineKeyboardMarkup(btn))
             return
-            
         if message.text.startswith("/"): return
         
         if '@admin' in message.text.lower() or '@admins' in message.text.lower():
             if await is_check_admin(client, message.chat.id, message.from_user.id): return
             return
-
         elif re.findall(r'https?://\S+|www\.\S+|t\.me/\S+|@\w+', message.text):
             if await is_check_admin(client, message.chat.id, message.from_user.id): return
             try: await message.delete()
             except: pass
             return await message.reply('Links not allowed here!')
-        
         elif '#request' in message.text.lower():
             if message.from_user.id in ADMINS: return
             await client.send_message(LOG_CHANNEL, f"#Request\nUser: {message.from_user.mention}\nMsg: {message.text}")
@@ -113,20 +103,21 @@ async def next_page(bot, query):
     settings = await get_settings(query.message.chat.id)
     del_msg = f"\n\n<b>⚠️ Auto Delete in <code>{get_readable_time(DELETE_TIME)}</code></b>" if settings["auto_delete"] else ''
     
-    # --- LINK MODE GENERATION ---
+    # --- MATCHING IMAGE 1 UI (Link Mode) ---
     files_link = ''
     for index, file in enumerate(files, start=offset+1):
+        # Format: [Size] Filename (Hyperlinked)
         files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
 
     btn = []
     
-    # Send All & Quality Buttons
+    # Row 1: Send All | Quality
     btn.insert(0, [
-        InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ", url=f"https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}"),
-        InlineKeyboardButton("⚙️ ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")
+        InlineKeyboardButton("♻️ SEND ALL", url=f"https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}"),
+        InlineKeyboardButton("⚙️ QUALITY", callback_data=f"quality#{key}#{req}#{offset}")
     ])
 
-    # Pagination
+    # Row 2: Pagination
     if 0 < offset <= MAX_BTN:
         off_set = 0
     elif offset == 0:
@@ -145,8 +136,8 @@ async def next_page(bot, query):
         
     btn.append(nav_btns)
 
-    # Caption में Search Result + Files Links + Delete Msg होगा
-    cap = f"<b>✅ Results for:</b> <i>{search}</i>\n<b>📂 Total:</b> {total}\n{files_link}"
+    # Header with User Name & Query (Like Image 1)
+    cap = f"<b>{query.from_user.mention}</b>\n<i>{search}</i>\n\n<b>✅ Results for:</b> <i>{search}</i>\n<b>📂 Total:</b> {total}\n{files_link}"
     
     try:
         await query.message.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
@@ -168,20 +159,17 @@ async def auto_filter(client, msg, s, spoll=False):
     temp.FILES[key] = files
     BUTTONS[key] = search
     
-    # --- LINK MODE GENERATION ---
+    # --- MATCHING IMAGE 1 UI ---
     files_link = ''
     for index, file in enumerate(files, start=1):
         files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
     
     btn = []
-    
-    # Send All & Quality Buttons
     btn.insert(0, [
-        InlineKeyboardButton("♻️ sᴇɴᴅ ᴀʟʟ", url=f"https://t.me/{temp.U_NAME}?start=all_{message.chat.id}_{key}"),
-        InlineKeyboardButton("⚙️ ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#0")
+        InlineKeyboardButton("♻️ SEND ALL", url=f"https://t.me/{temp.U_NAME}?start=all_{message.chat.id}_{key}"),
+        InlineKeyboardButton("⚙️ QUALITY", callback_data=f"quality#{key}#{req}#0")
     ])
 
-    # Pagination
     if offset != "":
         btn.append([
             InlineKeyboardButton(f"🗓 1/{math.ceil(int(total_results) / MAX_BTN)}", callback_data="buttons"),
@@ -190,12 +178,12 @@ async def auto_filter(client, msg, s, spoll=False):
 
     del_msg = f"\n\n<b>⚠️ Auto Delete in <code>{get_readable_time(DELETE_TIME)}</code></b>" if settings["auto_delete"] else ''
     
-    # Caption में Search Result + Files Links + Delete Msg
-    cap = f"<b>✅ Results for:</b> <i>{search}</i>\n<b>📂 Total:</b> {total_results}\n{files_link}"
+    # Header format
+    cap = f"<b>{message.from_user.mention}</b>\n<i>{search}</i>\n\n<b>✅ Results for:</b> <i>{search}</i>\n<b>📂 Total:</b> {total_results}\n{files_link}"
 
     await s.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
-# --- CALLBACK HANDLERS ---
+# --- CALLBACK HANDLERS (Same as before) ---
 
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
@@ -348,7 +336,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer(url=f"https://t.me/{temp.U_NAME}?start={mc}")
         await query.message.delete()
     
-    # --- DELETE ALL HANDLER (Added Back) ---
     elif query.data == "delete_all":
         await query.message.edit("Deleting all files... This may take a while.")
         total = await delete_files("") 
