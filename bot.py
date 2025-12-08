@@ -3,17 +3,18 @@ import logging.config
 import os
 import time
 import asyncio
-import pytz # Timezone के लिए
-from datetime import datetime # Timezone के लिए
+import pytz 
+from datetime import datetime
 from hydrogram import Client, __version__
 from hydrogram.raw.all import layer
 from hydrogram.enums import ParseMode
 from hydrogram.errors import FloodWait
 from aiohttp import web
 from web import web_app
+# FIX: FILES_DATABASE_URL को यहाँ से हटा दिया गया है
 from info import (
     API_ID, API_HASH, BOT_TOKEN, LOG_CHANNEL, 
-    PORT, ADMINS, FILES_DATABASE_URL, DATA_DATABASE_URL
+    PORT, ADMINS, DATA_DATABASE_URL
 )
 from utils import temp, check_premium
 from database.users_chats_db import db
@@ -43,8 +44,7 @@ class Bot(Client):
         )
 
     async def start(self):
-        # --- FIX: Uptime Calculation Start ---
-        # बॉट स्टार्ट होते ही समय नोट करें, ताकि Uptime 0 से शुरू हो
+        # Uptime Calculation Start
         temp.START_TIME = time.time() 
         
         await super().start()
@@ -79,8 +79,7 @@ class Bot(Client):
         # Premium Check Task शुरू करें
         asyncio.create_task(check_premium(self))
 
-        # --- FIX: Indian Time Zone (IST) ---
-        # Asia/Kolkata टाइमज़ोन सेट करें
+        # Indian Time Zone (IST)
         timezone = pytz.timezone("Asia/Kolkata")
         now = datetime.now(timezone)
         formatted_time = now.strftime("%I:%M %p %d/%m/%Y")
@@ -120,17 +119,9 @@ class Bot(Client):
 # -------------------------------------------------------------
 if __name__ == "__main__":
     try:
-        # 1. नया लूप बनाएँ
         loop = asyncio.new_event_loop()
-        
-        # 2. इस लूप को ग्लोबल सेट करें
         asyncio.set_event_loop(loop)
-        
-        # 3. अब बॉट बनाएँ
         app = Bot()
-        
-        # 4. बॉट चलाएँ
         app.run()
-        
     except Exception as e:
         logger.error(f"Runtime Error: {e}")
