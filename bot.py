@@ -53,7 +53,7 @@ class Bot(Client):
         temp.BANNED_USERS = b_users
         temp.BANNED_CHATS = b_chats
         
-        # Restart Message Logic
+        # Restart Message Logic (पुराने मैसेज को एडिट करना)
         if os.path.exists('restart.txt'):
             try:
                 with open('restart.txt', 'r') as file:
@@ -70,8 +70,24 @@ class Bot(Client):
         await web.TCPSite(app, "0.0.0.0", PORT).start()
         logger.info(f"Web Server Started on Port {PORT}")
 
-        # Premium Check Task
+        # Premium Check Task शुरू करें
         asyncio.create_task(check_premium(self))
+
+        # --- NEW: Send Startup Message to Admins ---
+        startup_msg = (
+            f"<b>🤖 Bot Started!</b>\n\n"
+            f"<b>Name:</b> {me.mention}\n"
+            f"<b>Username:</b> @{me.username}\n"
+            f"<b>Hydrogram:</b> v{__version__}\n"
+            f"<b>Time:</b> {time.strftime('%I:%M %p %d/%m/%Y')}"
+        )
+        
+        # सभी एडमिन को मैसेज भेजें
+        for admin in ADMINS:
+            try:
+                await self.send_message(chat_id=admin, text=startup_msg)
+            except Exception:
+                pass
 
         # Log Channel पर मैसेज
         try:
@@ -99,7 +115,7 @@ if __name__ == "__main__":
         # 2. इस लूप को ग्लोबल सेट करें
         asyncio.set_event_loop(loop)
         
-        # 3. अब बॉट बनाएँ (अब यह ऊपर सेट किए गए लूप का उपयोग करेगा)
+        # 3. अब बॉट बनाएँ
         app = Bot()
         
         # 4. बॉट चलाएँ
