@@ -11,7 +11,7 @@ from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from Script import script
-from database.ia_filterdb import db_count_documents, second_db_count_documents, get_file_details
+from database.ia_filterdb import db_count_documents, second_db_count_documents, get_file_details, delete_files
 from database.users_chats_db import db
 from info import (
     IS_PREMIUM, PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME, URL, BIN_CHANNEL, 
@@ -19,7 +19,7 @@ from info import (
     VERIFY_TUTORIAL, VERIFY_EXPIRE, SHORTLINK_API, SHORTLINK_URL, DELETE_TIME, 
     SUPPORT_LINK, UPDATES_LINK, LOG_CHANNEL, PICS, IS_STREAM, REACTIONS, PM_FILE_DELETE_TIME
 )
-# 'temp' को यहाँ सबसे ऊपर इम्पोर्ट किया गया है ताकि UnboundLocalError न आए
+# temp और अन्य utils को सबसे ऊपर इम्पोर्ट करें
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
     is_check_admin, get_shortlink, get_verify_status, update_verify_status, 
@@ -101,7 +101,6 @@ async def start(client, message):
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
             InlineKeyboardButton('📚 Status 📊', callback_data='stats')
         ],[
-            # Fix: Using temp.U_NAME instead of client.username
             InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{temp.U_NAME}?start=premium")
         ]]
         reply_markup = InlineKeyboardMarkup(buttons)
@@ -176,7 +175,6 @@ async def start(client, message):
         except ValueError:
             return await message.reply("Invalid link format")
             
-        # 'temp' is already imported at top, so no local import needed here
         files = temp.FILES.get(key)
         if not files:
             return await message.reply('No Such All Files Exist! (Link expired or bot restarted)')
@@ -436,6 +434,47 @@ async def plan(client, message):
         InlineKeyboardButton('Activate Plan', callback_data='activate_plan')
     ]]
     await message.reply(script.PLAN_TXT.format(PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME), reply_markup=InlineKeyboardMarkup(btn))
+
+@Client.on_message(filters.command('myplan') & filters.private)
+async def myplan(client, message):
+    if not IS_PREMIUM:
+        return await message.reply('Premium feature is currently disabled by Admin.')
+    
+    # 2. अगर यूजर एडमिन है (Lifetime Premium)
+    if message.from_user.id in ADMINS:
+        return await message.reply(
+            f"<b>👑 Hello Admin {message.from_user.mention}!</b>\n\n"
+            f"You have <b>Lifetime Premium Access</b> because you are the owner. 😎"
+        )
+
+    # 3. डेटाबेस से प्लान चेक करें
+    mp = await db.get_plan(message.from_user.id)
+    is_prem = await is_premium(message.from_user.id, client)
+
+    # 4. अगर यूजर प्रीमियम नहीं है
+    if not is_prem:
+        btn = [[InlineKeyboardButton('💎 Activate Plan', callback_data='activate_plan')]]
+        return await message.reply(
+            "<b>❌ No Active Plan</b>\n\n"
+            "You are currently a free user. Upgrade to Premium to remove ads and unlock features.",
+            reply_markup=InlineKeyboardMarkup(btn)
+        )
+
+    # 5. अगर यूजर प्रीमियम है, तो डेट दिखाएं
+    expire_date = mp.get('expire')
+    
+    # डेट फॉर्मेटिंग (Error handling के साथ)
+    if isinstance(expire_date, datetime):
+        readable_date = expire_date.strftime('%d %B %Y, %I:%M %p')
+    else:
+        readable_date = "Unknown / Unlimited"
+
+    await message.reply(
+        f"<b>💎 Premium Status</b>\n\n"
+        f"👤 <b>User:</b> {message.from_user.mention}\n"
+        f"📅 <b>Plan:</b> {mp.get('plan', 'Custom')}\n"
+        f"⏳ <b>Expires on:</b> <code>{readable_date}</code>"
+    )
 
 @Client.on_message(filters.command('add_prm') & filters.user(ADMINS))
 async def add_prm(bot, message):
