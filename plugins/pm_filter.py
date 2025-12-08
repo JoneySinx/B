@@ -4,7 +4,9 @@ import math
 import logging
 import qrcode
 import os
-from hydrogram.errors import ListenerTimeout
+# FIX: Added time import
+from time import time as time_now
+from hydrogram.errors import ListenerTimeout, MessageNotModified
 from datetime import datetime
 from info import (
     IS_PREMIUM, PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME, UPI_ID, UPI_NAME,
@@ -144,7 +146,10 @@ async def next_page(bot, query):
     btn.append(nav_btns)
 
     cap = f"<b>✅ Results for:</b> {search}\n<b>📂 Total:</b> {total}"
-    await query.message.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
+    try:
+        await query.message.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
+    except MessageNotModified:
+        pass
 
 async def auto_filter(client, msg, s, spoll=False):
     message = msg
@@ -264,9 +269,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
             InlineKeyboardButton('📚 Status 📊', callback_data='stats')
         ]]
-        await query.message.edit_text(script.START_TXT.format(query.from_user.mention, get_wish()), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        try:
+            await query.message.edit_text(script.START_TXT.format(query.from_user.mention, get_wish()), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        except MessageNotModified:
+            pass
 
-    # --- HELP BUTTON FIXED HERE ---
     elif query.data == "help":
         buttons = [[
             InlineKeyboardButton('🙋🏻‍♀️ User', callback_data='user_command'),
@@ -274,9 +281,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         ],[
             InlineKeyboardButton('🏄 Back', callback_data='start')
         ]]
-        await query.message.edit_text(script.HELP_TXT.format(query.from_user.mention), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        try:
+            await query.message.edit_text(script.HELP_TXT.format(query.from_user.mention), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        except MessageNotModified:
+            pass
 
-    # --- USER/ADMIN COMMANDS RESTORED ---
     elif query.data == "user_command":
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='help')]]
         await query.message.edit_text(script.USER_COMMAND_TXT, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
@@ -294,6 +303,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         users = await db.total_users_count()
         chats = await db.total_chat_count()
         prm = await db.get_premium_count()
+        # FIX: time_now imported correctly now
         uptime = get_readable_time(time_now() - temp.START_TIME)
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='start')]]
         await query.message.edit_text(script.STATUS_TXT.format(users, prm, chats, "N/A", files, "N/A", "-", "-", uptime), reply_markup=InlineKeyboardMarkup(buttons))
