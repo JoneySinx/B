@@ -1,175 +1,254 @@
-import urllib.parse
-import html
-import logging
-from info import BIN_CHANNEL, URL
-from utils import temp
+# web/utils/render_template.py
 
-# लॉगिंग सेटअप
-logger = logging.getLogger(__name__)
+# ... existing imports ...
 
-# HTML Template (Plyr Player with Dark Theme)
 watch_tmplt = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta property="og:image" content="https://i.ibb.co/M8S0Zzj/live-streaming.png" itemprop="thumbnailUrl">
-    <meta property="og:title" content="{heading}">
-    <meta property="og:description" content="Watch {file_name} online with high speed streaming.">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{heading}</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <meta property="og:title" content="{heading}">
+    <meta property="og:description" content="Watch {file_name} online. Powered by Fast Finder.">
+    <meta property="og:image" content="https://i.ibb.co/M8S0Zzj/live-streaming.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+
     <style>
         :root {
-            --primary: #818cf8;
-            --primary-hover: #6366f1;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --bg-color: #0f172a;
-            --player-bg: #1e293b;
-            --footer-bg: #1e293b;
-            --border-color: #334155;
+            --bg-color: #0f0f13; /* Very dark background */
+            --card-bg: #18181b; /* Slightly lighter card background */
+            --primary: #e50914; /* Netflix-like red, or change to your bot's color like #2196F3 */
+            --text-main: #ffffff;
+            --text-sub: #a1a1aa;
+            --border: #27272a;
         }
-        
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
         body {
-            font-family: 'Inter', sans-serif;
             background-color: var(--bg-color);
-            color: var(--text-primary);
+            color: var(--text-main);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
-        
-        header {
-            padding: 1rem;
-            background-color: var(--player-bg);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+        /* Navbar */
+        .navbar {
+            padding: 1rem 1.5rem;
+            background: rgba(15, 15, 19, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
             position: sticky;
             top: 0;
-            z-index: 10;
+            z-index: 100;
             display: flex;
-            justify-content: center;
             align-items: center;
+            gap: 10px;
+        }
+
+        .brand {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Main Content */
+        .main-container {
+            flex: 1;
+            width: 100%;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Video Player Wrapper */
+        .video-wrapper {
+            width: 100%;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+            aspect-ratio: 16/9; /* Enforce aspect ratio to prevent layout shifts */
         }
         
-        #file-name {
+        video {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* File Info Section */
+        .info-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .file-title {
             font-size: 1.1rem;
             font-weight: 600;
-            color: var(--text-primary);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 80%;
-            text-align: center;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+            word-break: break-word;
         }
-        
-        .container {
-            flex: 1;
+
+        .tags {
             display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 2rem;
-            width: 100%;
-        }
-        
-        .player-container {
-            width: 100%;
-            max-width: 1200px;
-            background-color: var(--player-bg);
-            border-radius: 0.5rem;
-            overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        
-        .action-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 1rem;
-            margin-top: 1rem;
-            padding: 1rem;
-            flex-wrap: wrap;
-        }
-        
-        .action-btn {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.5rem 1rem;
-            border-radius: 0.25rem;
-            font-weight: 500;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
             gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+
+        .tag {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-sub);
+            text-transform: uppercase;
+        }
+
+        .tag.hd {
+            background: rgba(229, 9, 20, 0.2);
+            color: #ff4d4d;
+        }
+
+        /* Action Buttons */
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 640px) {
+            .actions {
+                grid-template-columns: 1fr;
+            }
+            .main-container {
+                padding: 1rem;
+            }
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
             text-decoration: none;
-            transition: background-color 0.2s;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
         }
-        
-        .action-btn:hover { background-color: var(--primary-hover); }
-        
+
+        .btn-primary {
+            background: var(--text-main);
+            color: #000;
+        }
+        .btn-primary:hover {
+            background: #e2e2e2;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Footer */
         footer {
-            padding: 1rem;
             text-align: center;
-            background-color: var(--footer-bg);
-            color: var(--text-secondary);
+            padding: 1.5rem;
+            color: var(--text-sub);
             font-size: 0.875rem;
-            border-top: 1px solid var(--border-color);
+            border-top: 1px solid var(--border);
+            margin-top: auto;
         }
-        
-        @media (max-width: 768px) {
-            #file-name { font-size: 0.9rem; max-width: 90%; }
-            .container { padding: 0.5rem; }
-            .action-buttons { gap: 0.5rem; }
-            .action-btn { font-size: 0.9rem; flex: 1; justify-content: center; }
+
+        /* Plyr Customization */
+        .plyr {
+            --plyr-color-main: var(--primary);
+            border-radius: 12px;
         }
-        
-        /* Plyr overrides */
-        .plyr--video .plyr__control--overlaid { background: var(--primary); }
-        .plyr--video .plyr__control:hover, 
-        .plyr--video .plyr__control[aria-expanded="true"] { background: var(--primary-hover); }
-        .plyr__control.plyr__tab-focus { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.5); }
-        .plyr--full-ui input[type="range"] { color: var(--primary); }
     </style>
 </head>
-<body class="dark">
-    <header>
-        <div id="file-name" title="{file_name}">{file_name}</div>
-    </header>
+<body>
 
-    <div class="container">
-        <div class="player-container">
-            <video controls crossorigin playsinline>
-                <source src="{src}" type="{mime_type}">
-                Your browser does not support the video tag.
+    <nav class="navbar">
+        <span class="brand">FAST FINDER</span>
+    </nav>
+
+    <main class="main-container">
+        
+        <div class="video-wrapper">
+            <video id="player" playsinline controls preload="metadata">
+                <source src="{src}" type="{mime_type}" />
             </video>
-            <div class="action-buttons">
-                <a href="{src}" class="action-btn" download>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Download
+        </div>
+
+        <div class="info-card">
+            <h1 class="file-title">{file_name}</h1>
+            
+            <div class="tags">
+                <span class="tag hd">STREAM</span>
+                <span class="tag">FAST SERVER</span>
+                <span class="tag">NO ADS</span>
+            </div>
+
+            <div class="actions">
+                <a href="{src}" class="btn btn-primary" download>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    Direct Download
                 </a>
-                <a href="vlc://{src}" class="action-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <a href="vlc://{src}" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
                     Play in VLC
                 </a>
             </div>
         </div>
-    </div>
+        
+        <div class="info-card" style="text-align: center; color: var(--text-sub); font-size: 0.9rem;">
+             Audio or Video not playing? Try using <b>VLC Player</b> or <b>MX Player</b> for the best experience.
+        </div>
+
+    </main>
 
     <footer>
-        <p>Video not playing? Try downloading the file or opening in VLC.</p>
+        <p>&copy; 2025 Fast Finder Bot. All rights reserved.</p>
     </footer>
 
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const player = new Plyr('video', {
-                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+            const player = new Plyr('#player', {
+                controls: [
+                    'play-large', 'play', 'progress', 'current-time', 'duration', 
+                    'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'
+                ],
                 settings: ['captions', 'quality', 'speed'],
-                speed: { selected: 1, options: [0.5, 0.75, 1, 1.25, 1.5, 2] }
+                keyboard: { focused: true, global: true },
             });
         });
     </script>
@@ -177,54 +256,4 @@ watch_tmplt = """
 </html>
 """
 
-async def media_watch(message_id):
-    try:
-        # 1. Message Fetching
-        media_msg = await temp.BOT.get_messages(BIN_CHANNEL, message_id)
-        if not media_msg or not media_msg.media:
-            return '<h1>File not found or deleted</h1>'
-
-        media = getattr(media_msg, media_msg.media.value, None)
-        if not media:
-            return '<h1>Unsupported Media Type</h1>'
-
-        # 2. Extract Details
-        file_name = getattr(media, 'file_name', 'Unknown File')
-        mime_type = getattr(media, 'mime_type', 'application/octet-stream')
-        
-        # 3. Stream Link Generation
-        base_url = URL[:-1] if URL.endswith('/') else URL
-        src = f"{base_url}/download/{message_id}"
-
-        # 4. Check if streamable
-        is_video = 'video' in mime_type
-        is_audio = 'audio' in mime_type
-        
-        if is_video or is_audio:
-            safe_heading = html.escape(f'Watch - {file_name}')
-            safe_filename = html.escape(file_name)
-            
-            # FIX: Using .replace() instead of .format() to avoid CSS brace conflicts
-            return watch_tmplt.replace('{heading}', safe_heading) \
-                              .replace('{file_name}', safe_filename) \
-                              .replace('{src}', src) \
-                              .replace('{mime_type}', mime_type)
-        else:
-            return f'''
-            <!DOCTYPE html>
-            <html lang="en">
-            <head><title>Not Streamable</title></head>
-            <body style="background:#0f172a; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
-                <div style="text-align:center;">
-                    <h1>File not streamable</h1>
-                    <p>Filename: {html.escape(file_name)}</p>
-                    <br>
-                    <a href="{src}" style="background:#818cf8; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;">Download File</a>
-                </div>
-            </body>
-            </html>
-            '''
-
-    except Exception as e:
-        logger.error(f"Render Template Error: {e}")
-        return '<h1>Internal Server Error</h1>'
+# ... rest of the render_template.py code (media_watch function) ...
