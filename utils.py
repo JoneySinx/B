@@ -4,8 +4,8 @@ import logging
 import asyncio
 import time
 import math
-from datetime import datetime
-from pytz import timezone
+import pytz # Fixed Import
+from datetime import datetime, timezone # Fixed Import
 from info import (
     LOG_CHANNEL, API_ID, API_HASH, BOT_TOKEN, 
     ADMINS, IS_PREMIUM, PRE_DAY_AMOUNT, PICS, 
@@ -25,13 +25,16 @@ class temp(object):
     B_NAME = None
     B_LINK = None
     B_ID = None
-    BOT = None # Bot Instance for Web
-    FILES = {} # For storing search results
-    SETTINGS = {} # For caching group settings
-    CANCEL = False # For indexing cancellation
-    MAINTENANCE = False # Future use
+    BOT = None 
+    FILES = {} 
+    SETTINGS = {} 
+    CANCEL = False 
+    MAINTENANCE = False
+    # --- ADDED MISSING ATTRIBUTES ---
+    BANNED_USERS = []
+    BANNED_CHATS = []
 
-# --- SETTINGS FUNCTIONS (FIXED: Added back) ---
+# --- SETTINGS FUNCTIONS ---
 async def get_settings(group_id):
     settings = temp.SETTINGS.get(group_id)
     if not settings:
@@ -128,7 +131,6 @@ async def is_subscribed(client, message):
         if user.status != enums.ChatMemberStatus.BANNED:
             return False
     
-    # Check Dynamic F-Sub (if set in DB)
     stg = await db.get_bot_sttgs()
     if stg and stg.get('FORCE_SUB_CHANNELS'):
         channels = stg['FORCE_SUB_CHANNELS'].split()
@@ -143,7 +145,7 @@ async def is_subscribed(client, message):
         return links
     return False
 
-# --- PREMIUM CHECKER ---
+# --- PREMIUM CHECKER (Fixed Timezone) ---
 async def is_premium(user_id, client):
     if not IS_PREMIUM:
         return True 
@@ -155,6 +157,10 @@ async def is_premium(user_id, client):
     if user.get('premium'):
         expire_date = user.get('expire')
         if expire_date and isinstance(expire_date, datetime):
+            # Check if expiry_date is naive (no timezone)
+            if expire_date.tzinfo is None:
+                expire_date = expire_date.replace(tzinfo=timezone.utc)
+            
             if datetime.now(timezone.utc) < expire_date:
                 return True
             else:
@@ -173,9 +179,10 @@ def upload_image(path):
     except:
         return None
 
-# --- WISHES ---
+# --- WISHES (Fixed Timezone) ---
 def get_wish():
-    now = datetime.now(timezone("Asia/Kolkata"))
+    # Use pytz for specific location
+    now = datetime.now(pytz.timezone("Asia/Kolkata"))
     t = now.strftime("%H")
     hour = int(t)
     if 0 <= hour < 12:
@@ -187,7 +194,7 @@ def get_wish():
     else:
         return "Good Night 🌙"
 
-# --- SHORTLINK (Dummy) ---
+# --- SHORTLINK ---
 async def get_shortlink(url, api, link):
     return link 
 
