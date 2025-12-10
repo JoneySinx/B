@@ -39,6 +39,9 @@ class Bot(Client):
         # Set Start Time
         temp.START_TIME = time()
         
+        # --- CRITICAL FIX: Set Bot Instance for Web Server ---
+        temp.BOT = self 
+        
         # Start Client
         await super().start()
         me = await self.get_me()
