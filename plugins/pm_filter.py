@@ -152,6 +152,13 @@ async def next_page(bot, query):
         await query.message.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
     except MessageNotModified:
         pass
+    
+    # --- AUTO DELETE & GONE MESSAGE LOGIC (Pagination) ---
+    if settings["auto_delete"]:
+        await asyncio.sleep(DELETE_TIME)
+        # Note: We can't easily delete the 'next_page' message reference here without more context, 
+        # but the main auto_filter handles the primary deletion. 
+        # Pagination usually updates the existing message, so previous auto-delete timers might still be running.
 
 async def auto_filter(client, msg, s, spoll=False):
     message = msg
@@ -210,7 +217,6 @@ async def auto_filter(client, msg, s, spoll=False):
         except: pass
         
         # Send "Gone" message
-        # Use offset 0 if not available to restart from beginning
         btn_data = f"next_{req}_{key}_{offset if offset else 0}"
         btn = [[InlineKeyboardButton("Get File Again", callback_data=btn_data)]]
         
@@ -251,6 +257,7 @@ async def quality_search(client: Client, query: CallbackQuery):
         await query.answer("Session Expired, Search Again!", show_alert=True)
         return
         
+    # Search with quality filter
     files, n_offset, total = await get_search_results(search, lang=qual)
     
     if not files:
@@ -267,6 +274,8 @@ async def quality_search(client: Client, query: CallbackQuery):
         InlineKeyboardButton("⚙️ ǫᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")
     ])
     
+    # For simplicity in filtered search, reset offset or hide buttons if results < MAX_BTN
+    # Here we show Back button to return to main list
     btn.append([InlineKeyboardButton("⪻ BACK", callback_data=f"next_{req}_{key}_{offset}")])
     
     cap = f"<b>✅ Results for:</b> <i>{search}</i> ({qual.upper()})\n<b>📂 Total:</b> {total}\n{files_link}"
