@@ -26,6 +26,9 @@ from utils import (
 
 logger = logging.getLogger(__name__)
 
+# Date-Time Format (DD/MM/YYYY HH:MM AM/PM)
+TIME_FMT = "%d/%m/%Y %I:%M %p"
+
 async def get_grp_stg(group_id):
     settings = await get_settings(group_id)
     btn = [[
@@ -61,12 +64,10 @@ async def start(client, message):
         
         wish = get_wish()
         user = message.from_user.mention if message.from_user else "Dear"
-        
-        # --- SUPPORT GROUP REMOVED ---
         btn = [[
-            InlineKeyboardButton('⚡️ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ ⚡️', url=UPDATES_LINK)
+            InlineKeyboardButton('⚡️ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ ⚡️', url=UPDATES_LINK),
+            InlineKeyboardButton('💡 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ 💡', url=SUPPORT_LINK)
         ]]
-        
         await message.reply(text=f"<b>ʜᴇʏ {user}, <i>{wish}</i>\nʜᴏᴡ ᴄᴀɴ ɪ ʜᴇʟᴘ ʏᴏᴜ??</b>", reply_markup=InlineKeyboardMarkup(btn))
         return 
         
@@ -94,18 +95,27 @@ async def start(client, message):
         return
 
     mc = message.command[1]
-    if mc == 'premium': return await plan(client, message)
+
+    if mc == 'premium':
+        return await plan(client, message)
     
     if mc.startswith('settings'):
         _, group_id = message.command[1].split("_")
-        if not await is_check_admin(client, int(group_id), message.from_user.id): return await message.reply("You not admin.")
+        if not await is_check_admin(client, int(group_id), message.from_user.id):
+            return await message.reply("You not admin in this group.")
         btn = await get_grp_stg(int(group_id))
-        return await message.reply(f"Settings for <b>'{group_id}'</b>", reply_markup=InlineKeyboardMarkup(btn))
+        chat = await client.get_chat(int(group_id))
+        return await message.reply(f"Change your settings for <b>'{chat.title}'</b> as your wish. ⚙", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
     btn = await is_subscribed(client, message)
     if btn:
         btn.append([InlineKeyboardButton("🔁 Try Again 🔁", callback_data=f"checksub#{mc}")])
-        await message.reply_photo(photo=random.choice(PICS), caption=f"👋 Hello {message.from_user.mention},\nPlease join my 'Updates Channel'.", reply_markup=InlineKeyboardMarkup(btn))
+        await message.reply_photo(
+            photo=random.choice(PICS),
+            caption=f"👋 Hello {message.from_user.mention},\n\nPlease join my 'Updates Channel' and try again. 😇",
+            reply_markup=reply_markup,
+            parse_mode=enums.ParseMode.HTML
+        )
         return 
         
     if mc.startswith('all'):
@@ -239,7 +249,9 @@ async def link(bot, message):
 
 @Client.on_message(filters.command('index_channels'))
 async def channels_info(bot, message):
-    if message.from_user.id not in ADMINS: return
+    if message.from_user.id not in ADMINS:
+        await message.delete()
+        return
     env_ids = INDEX_CHANNELS
     db_ids = await db.get_index_channels_db()
     all_ids = list(set(env_ids + db_ids))
@@ -250,6 +262,7 @@ async def channels_info(bot, message):
             chat = await bot.get_chat(id)
             text += f'• {chat.title} (`{id}`)\n'
         except: text += f'• Unknown (`{id}`)\n'
+    text += f'\n**Total:** {len(all_ids)}'
     await message.reply(text)
 
 @Client.on_message(filters.command('add_channel') & filters.user(ADMINS))
@@ -302,15 +315,27 @@ async def plan(client, message):
 
 @Client.on_message(filters.command('myplan') & filters.private)
 async def myplan(client, message):
-    if not IS_PREMIUM: return await message.reply('Premium feature is currently disabled by Admin.')
-    if message.from_user.id in ADMINS: return await message.reply(f"<b>👑 Hello Admin {message.from_user.mention}!</b>\n\nYou have <b>Lifetime Premium Access</b> because you are the owner. 😎")
+    if not IS_PREMIUM: 
+        return await message.reply('Premium feature is currently disabled by Admin.')
+    
+    # Check if User is Admin
+    if message.from_user.id in ADMINS: 
+        return await message.reply(f"<b>👑 Hello Admin {message.from_user.mention}!</b>\n\nYou have <b>Lifetime Premium Access</b> because you are the owner. 😎")
+    
     mp = await db.get_plan(message.from_user.id)
     is_prem = await is_premium(message.from_user.id, client)
+    
     if not is_prem:
         btn = [[InlineKeyboardButton('💎 Activate Plan', callback_data='activate_plan')]]
         return await message.reply("<b>❌ No Active Plan</b>\n\nYou are currently a free user. Upgrade to Premium to remove ads and unlock features.", reply_markup=InlineKeyboardMarkup(btn))
+    
+    # Format Expiry Date with Time
     expire_date = mp.get('expire')
-    readable_date = expire_date.strftime('%d %B %Y, %I:%M %p') if isinstance(expire_date, datetime) else "Unknown"
+    if isinstance(expire_date, datetime):
+        readable_date = expire_date.strftime(TIME_FMT)
+    else:
+        readable_date = "Unknown / Unlimited"
+        
     await message.reply(f"<b>💎 Premium Status</b>\n\n👤 <b>User:</b> {message.from_user.mention}\n📅 <b>Plan:</b> {mp.get('plan', 'Custom')}\n⏳ <b>Expires on:</b> <code>{readable_date}</code>")
 
 @Client.on_message(filters.command('add_prm') & filters.user(ADMINS))
@@ -330,9 +355,13 @@ async def add_prm(bot, message):
         mp['plan'] = f'{d} days'
         mp['premium'] = True
         await db.update_plan(user.id, mp)
-        await bot.send_message(LOG_CHANNEL, f"#Premium_Added\n\n👤 <b>User:</b> {user.mention} (`{user.id}`)\n🗓 <b>Plan:</b> {d} Days\n⏰ <b>Expires:</b> {ex.strftime('%d/%m/%Y')}\n👮‍♂️ <b>Added By:</b> {message.from_user.mention}")
-        await message.reply(f"Given premium to {user.mention}\nExpire: {ex.strftime('%d/%m/%Y')}")
-        try: await bot.send_message(user.id, f"Your now premium user\nExpire: {ex.strftime('%d/%m/%Y')}")
+        
+        # Log with Time
+        await bot.send_message(LOG_CHANNEL, f"#Premium_Added\n\n👤 <b>User:</b> {user.mention} (`{user.id}`)\n🗓 <b>Plan:</b> {d} Days\n⏰ <b>Expires:</b> {ex.strftime(TIME_FMT)}\n👮‍♂️ <b>Added By:</b> {message.from_user.mention}")
+        
+        # Reply with Time
+        await message.reply(f"Given premium to {user.mention}\nExpire: {ex.strftime(TIME_FMT)}")
+        try: await bot.send_message(user.id, f"Your now premium user\nExpire: {ex.strftime(TIME_FMT)}")
         except: pass
     else: await message.reply(f"{user.mention} is already premium user")
 
@@ -367,8 +396,14 @@ async def prm_list(bot, message):
             count += 1
             try: u = await bot.get_users(user['id']); mention = u.mention
             except: mention = "Unknown User"
+            
+            # Format with Time
             expiry = user['status']['expire']
-            exp_str = expiry.strftime('%d/%m/%Y') if isinstance(expiry, datetime) else "Unlimited"
+            if isinstance(expiry, datetime):
+                exp_str = expiry.strftime(TIME_FMT)
+            else:
+                exp_str = "Unlimited"
+                
             out += f"{count}. {mention} (`{user['id']}`) | ⏳ Exp: {exp_str}\n"
     if count == 0: await tx.edit_text("No premium users found.")
     else:
@@ -566,13 +601,18 @@ async def confirm_payment_handler(client, query):
         await db.update_plan(user_id, mp)
         
         user_info = await client.get_users(user_id)
-        await client.send_message(LOG_CHANNEL, f"#Premium_Added (Payment)\n\n👤 <b>User:</b> {user_info.mention} (`{user_id}`)\n🗓 <b>Plan:</b> {final_days} Days\n⏰ <b>Expires:</b> {ex.strftime('%d/%m/%Y')}\n👮‍♂️ <b>Approved By:</b> {query.from_user.mention}")
         
-        # Delete admin interaction messages
+        # Log Message (With Time)
+        await client.send_message(
+            LOG_CHANNEL, 
+            f"#Premium_Added (Payment)\n\n👤 <b>User:</b> {user_info.mention} (`{user_id}`)\n🗓 <b>Plan:</b> {final_days} Days\n⏰ <b>Expires:</b> {ex.strftime(TIME_FMT)}\n👮‍♂️ <b>Approved By:</b> {query.from_user.mention}"
+        )
+        
         try: await ask_msg.delete(); await msg.delete()
         except: pass
         
-        await client.send_message(query.message.chat.id, f"<b>✅ Premium Activated!</b>\nUser: {user_id}\nDays: {final_days}\nExpire: {ex.strftime('%d/%m/%Y')}")
+        # Admin Confirmation (With Time)
+        await client.send_message(query.message.chat.id, f"<b>✅ Premium Activated!</b>\nUser: {user_id}\nDays: {final_days}\nExpire: {ex.strftime(TIME_FMT)}")
         await query.message.edit_reply_markup(reply_markup=None)
         try: await client.send_message(user_id, f"<b>🥳 Payment Accepted!</b>\n\nYour Premium plan for <b>{final_days} Days</b> has been activated.")
         except: pass
