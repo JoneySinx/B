@@ -68,7 +68,6 @@ async def start(client, message):
         await message.reply(text=f"<b>ʜᴇʏ {user}, <i>{wish}</i>\nʜᴏᴡ ᴄᴀɴ ɪ ʜᴇʟᴘ ʏᴏᴜ??</b>", reply_markup=InlineKeyboardMarkup(btn))
         return 
         
-    # --- EMOJI REACTION ONLY (Sticker Removed) ---
     try: await message.react(emoji=random.choice(REACTIONS), big=True)
     except: pass
 
@@ -154,8 +153,9 @@ async def start(client, message):
         for i in range(0, len(file_ids), 100):
             try: await client.delete_messages(chat_id=message.chat.id, message_ids=file_ids[i:i+100])
             except: pass
-        
+            
         gone_msg = await message.reply("Tʜᴇ ғɪʟᴇ ʜᴀs ʙᴇᴇɴ ɢᴏɴᴇ ! Cʟɪᴄᴋ ɢɪᴠᴇɴ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ɪᴛ ᴀɢᴀɪɴ.", reply_markup=InlineKeyboardMarkup(buttons))
+        
         # 12 Hours Delete
         await asyncio.sleep(43200)
         try: await gone_msg.delete()
@@ -244,21 +244,64 @@ async def link(bot, message):
         await message.reply('Here is your link', reply_markup=InlineKeyboardMarkup(btn))
     except Exception as e: await message.reply(f'Error: {e}')
 
+# --- INDEX CHANNELS (Dynamic + Static) ---
 @Client.on_message(filters.command('index_channels'))
 async def channels_info(bot, message):
     if message.from_user.id not in ADMINS:
         await message.delete()
         return
-    ids = INDEX_CHANNELS
-    if not ids: return await message.reply("Not set INDEX_CHANNELS")
+    
+    # 1. Get ENV Channels
+    env_ids = INDEX_CHANNELS
+    # 2. Get DB Channels
+    db_ids = await db.get_index_channels_db()
+    # 3. Merge & Remove Duplicates
+    all_ids = list(set(env_ids + db_ids))
+
+    if not all_ids: return await message.reply("Not set INDEX_CHANNELS")
+    
     text = '**Indexed Channels:**\n\n'
-    for id in ids:
+    for id in all_ids:
         try:
             chat = await bot.get_chat(id)
-            text += f'{chat.title}\n'
-        except: text += f'{id} (Unknown)\n'
-    text += f'\n**Total:** {len(ids)}'
+            text += f'• {chat.title} (`{id}`)\n'
+        except: text += f'• Unknown (`{id}`)\n'
+    text += f'\n**Total:** {len(all_ids)}'
     await message.reply(text)
+
+# --- ADD INDEX CHANNEL (NEW) ---
+@Client.on_message(filters.command('add_channel') & filters.user(ADMINS))
+async def add_index_channel_cmd(client, message):
+    if len(message.command) < 2:
+        return await message.reply("Usage: `/add_channel -100xxxxxx`")
+    try:
+        chat_id = int(message.command[1])
+    except ValueError:
+        return await message.reply("Invalid Chat ID!")
+    
+    try:
+        chat = await client.get_chat(chat_id)
+        me = await client.get_chat_member(chat_id, "me")
+        if me.status != enums.ChatMemberStatus.ADMINISTRATOR:
+            return await message.reply(f"❌ I am not Admin in <b>{chat.title}</b>.")
+    except Exception as e:
+        return await message.reply(f"❌ Error: Could not access chat.\nError: {e}")
+
+    await db.add_index_channel(chat_id)
+    await message.reply(f"✅ Successfully Added:\n<b>{chat.title}</b> (`{chat_id}`)")
+
+# --- REMOVE INDEX CHANNEL (NEW) ---
+@Client.on_message(filters.command('remove_channel') & filters.user(ADMINS))
+async def remove_index_channel_cmd(client, message):
+    if len(message.command) < 2:
+        return await message.reply("Usage: `/remove_channel -100xxxxxx`")
+    try:
+        chat_id = int(message.command[1])
+    except ValueError:
+        return await message.reply("Invalid Chat ID!")
+
+    await db.remove_index_channel(chat_id)
+    await message.reply(f"🗑 Successfully Removed: `{chat_id}`")
 
 @Client.on_message(filters.command('settings'))
 async def settings(client, message):
@@ -521,6 +564,24 @@ async def unban_a_user(bot, message):
         await message.reply(f"User {user_id} unbanned successfully.")
     except Exception as e: await message.reply(f"Error: {e}")
 
+@Client.on_message(filters.command('ban_grp') & filters.user(ADMINS))
+async def disable_chat(bot, message):
+    try: chat = int(message.command[1])
+    except: return await message.reply('Give me a chat ID')
+    try:
+        await db.disable_chat(chat, "Banned by Admin")
+        await message.reply(f"Chat {chat} Disabled.")
+    except Exception as e: await message.reply(f"Error: {e}")
+
+@Client.on_message(filters.command('unban_grp') & filters.user(ADMINS))
+async def enable_chat(bot, message):
+    try: chat = int(message.command[1])
+    except: return await message.reply('Give me a chat ID')
+    try:
+        await db.re_enable_chat(chat)
+        await message.reply(f"Chat {chat} Enabled.")
+    except Exception as e: await message.reply(f"Error: {e}")
+
 # --- GROUP ADMIN COMMANDS ---
 @Client.on_message(filters.command('ban') & filters.group)
 async def ban_chat_user(client, message):
@@ -574,6 +635,7 @@ async def confirm_payment_handler(client, query):
         user_info = await client.get_users(user_id)
         await client.send_message(LOG_CHANNEL, f"#Premium_Added (Payment)\n\n👤 <b>User:</b> {user_info.mention} (`{user_id}`)\n🗓 <b>Plan:</b> {final_days} Days\n⏰ <b>Expires:</b> {ex.strftime('%d/%m/%Y')}\n👮‍♂️ <b>Approved By:</b> {query.from_user.mention}")
         
+        # Delete messages
         try: await ask_msg.delete(); await msg.delete()
         except: pass
         
