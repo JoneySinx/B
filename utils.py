@@ -12,6 +12,7 @@ from info import (
     UPI_ID, UPI_NAME, AUTH_CHANNEL, DB_CHANNEL
 )
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram.errors import FloodWait, InputUserDeactivated, UserIsBlocked, PeerIdInvalid
 from database.users_chats_db import db
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ class temp(object):
     B_NAME = None
     B_LINK = None
     B_ID = None
+    BOT = None # Bot Instance for Web
     FILES = {} # For storing search results
     CANCEL = False # For indexing cancellation
     MAINTENANCE = False # Future use
@@ -55,6 +57,40 @@ def get_size(bytes, suffix="B"):
         if bytes < factor:
             return f"{bytes:.2f} {unit}{suffix}"
         bytes /= factor
+
+# --- BROADCAST FUNCTIONS (ADDED FIX) ---
+async def broadcast_messages(user_id, message):
+    try:
+        await message.copy(chat_id=user_id)
+        return True, "Success"
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        return await broadcast_messages(user_id, message)
+    except InputUserDeactivated:
+        await db.delete_user(int(user_id))
+        logging.info(f"{user_id} - Removed from Database, since deleted account.")
+        return False, "Deleted"
+    except UserIsBlocked:
+        logging.info(f"{user_id} - Blocked the bot.")
+        return False, "Blocked"
+    except PeerIdInvalid:
+        await db.delete_user(int(user_id))
+        logging.info(f"{user_id} - PeerIdInvalid")
+        return False, "Error"
+    except Exception as e:
+        return False, "Error"
+
+async def groups_broadcast_messages(group_id, message):
+    try:
+        await message.copy(chat_id=group_id)
+        return True, "Success"
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        return await groups_broadcast_messages(group_id, message)
+    except Exception as e:
+        await db.delete_chat(int(group_id))
+        logging.info(f"{group_id} - {e}")
+        return False, "Error"
 
 # --- ADMIN CHECKER ---
 async def is_check_admin(client, chat_id, user_id):
@@ -94,7 +130,7 @@ async def is_subscribed(client, message):
 # --- PREMIUM CHECKER ---
 async def is_premium(user_id, client):
     if not IS_PREMIUM:
-        return True # If premium system disabled, everyone is premium
+        return True 
     
     if user_id in ADMINS:
         return True
@@ -106,22 +142,17 @@ async def is_premium(user_id, client):
             if datetime.now(timezone.utc) < expire_date:
                 return True
             else:
-                # Expired
                 await db.update_plan(user_id, {'expire': '', 'trial': False, 'plan': '', 'premium': False})
                 try: await client.send_message(user_id, "<b>Your Premium Plan has Expired!</b>\nUse /plan to renew.")
                 except: pass
                 return False
-        return True # Lifetime
+        return True 
     return False
 
-# --- IMAGE UPLOADER (telegra.ph style) ---
-# Using graph.org or similar as telegraph is down often
+# --- IMAGE UPLOADER ---
 import requests
 def upload_image(path):
     try:
-        # Using postimages or similar fallback if needed, but here implies a generic upload logic
-        # For simplicity in this stripped version, we return None or implement a basic one if you have the API
-        # Since requirements removed 'telegraph', we can skip or use a simple external API
         return None 
     except:
         return None
