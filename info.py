@@ -69,25 +69,11 @@ if not LOG_CHANNEL_STR.lstrip('-').isdigit():
     exit(1)
 LOG_CHANNEL = int(LOG_CHANNEL_STR)
 
-SUPPORT_GROUP_STR = environ.get('SUPPORT_GROUP', '')
-if not SUPPORT_GROUP_STR.lstrip('-').isdigit():
-    logger.error('SUPPORT_GROUP is missing, exiting now')
-    exit(1)
-SUPPORT_GROUP = int(SUPPORT_GROUP_STR)
-
 BIN_CHANNEL_STR = environ.get("BIN_CHANNEL", "")
 if not BIN_CHANNEL_STR.lstrip('-').isdigit():
     logger.error('BIN_CHANNEL is missing, exiting now')
     exit(1)
 BIN_CHANNEL = int(BIN_CHANNEL_STR)
-
-# --- MISSING VARIABLES ADDED HERE ---
-AUTH_CHANNEL_STR = environ.get('AUTH_CHANNEL', '')
-AUTH_CHANNEL = int(AUTH_CHANNEL_STR) if AUTH_CHANNEL_STR.lstrip('-').isdigit() else None
-
-DB_CHANNEL_STR = environ.get('DB_CHANNEL', '')
-DB_CHANNEL = int(DB_CHANNEL_STR) if DB_CHANNEL_STR.lstrip('-').isdigit() else None
-# ------------------------------------
 
 URL = environ.get("URL", "")
 if len(URL) == 0:
@@ -103,7 +89,16 @@ else:
         logger.error('URL is not valid, exiting now')
         exit(1)
 
-# --- OPTIONAL VARIABLES ---
+# --- OPTIONAL VARIABLES (Fixed: No Error if Missing) ---
+
+SUPPORT_GROUP_STR = environ.get('SUPPORT_GROUP', '')
+SUPPORT_GROUP = int(SUPPORT_GROUP_STR) if SUPPORT_GROUP_STR.lstrip('-').isdigit() else None
+
+AUTH_CHANNEL_STR = environ.get('AUTH_CHANNEL', '')
+AUTH_CHANNEL = int(AUTH_CHANNEL_STR) if AUTH_CHANNEL_STR.lstrip('-').isdigit() else None
+
+DB_CHANNEL_STR = environ.get('DB_CHANNEL', '')
+DB_CHANNEL = int(DB_CHANNEL_STR) if DB_CHANNEL_STR.lstrip('-').isdigit() else None
 
 PORT = int(environ.get('PORT', '8080'))
 DATABASE_NAME = environ.get('DATABASE_NAME', "Cluster0")
@@ -137,18 +132,18 @@ WELCOME = is_enabled('WELCOME', False)
 SPELL_CHECK = is_enabled("SPELL_CHECK", True)
 LINK_MODE = is_enabled("LINK_MODE", True)
 
-# --- QUALITY & LANGUAGE (Required for Buttons) ---
+# --- QUALITY & LANGUAGE ---
 LANGUAGES = [lang.lower() for lang in environ.get('LANGUAGES', 'hindi english telugu tamil kannada malayalam marathi punjabi').split()]
 QUALITY = [quality.lower() for quality in environ.get('QUALITY', '360p 480p 720p 1080p 1440p 2160p').split()]
 
-# --- DISABLED/REMOVED FEATURES (Kept Variables to prevent Import Errors in DB files) ---
-IMDB = is_enabled('IMDB', False) # Disabled
-SHORTLINK = is_enabled('SHORTLINK', False) # Disabled
+# --- DISABLED/REMOVED FEATURES (Kept Variables to prevent Import Errors) ---
+IMDB = is_enabled('IMDB', False) 
+SHORTLINK = is_enabled('SHORTLINK', False)
 SHORTLINK_URL = environ.get("SHORTLINK_URL", "")
 SHORTLINK_API = environ.get("SHORTLINK_API", "")
 LONG_IMDB_DESCRIPTION = is_enabled("LONG_IMDB_DESCRIPTION", False)
 
-# --- TEMPLATES (Using defaults from Script.py) ---
+# --- TEMPLATES ---
 IMDB_TEMPLATE = environ.get("IMDB_TEMPLATE", script.IMDB_TEMPLATE)
 FILE_CAPTION = environ.get("FILE_CAPTION", script.FILE_CAPTION)
 WELCOME_TEXT = environ.get("WELCOME_TEXT", script.WELCOME_TEXT)
