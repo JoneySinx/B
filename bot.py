@@ -8,12 +8,12 @@ import logging.config
 import asyncio
 from aiohttp import web
 from time import time
-# Correct Imports for Timezone
 from datetime import datetime, timezone
 import pytz
 
 # Local Imports
-from info import API_ID, API_HASH, BOT_TOKEN, PORT, LOG_CHANNEL, TIME_ZONE
+# FIX: Added ADMINS to imports
+from info import API_ID, API_HASH, BOT_TOKEN, PORT, LOG_CHANNEL, TIME_ZONE, ADMINS
 from utils import temp
 from Script import script
 from web import web_app
@@ -47,7 +47,7 @@ class Bot(Client):
         # Set Bot Instance for Web Server
         temp.BOT = self 
         
-        # Load Banned Users/Chats (To prevent initial empty list issue)
+        # Load Banned Users/Chats
         try:
             b_users, b_chats = await db.get_banned()
             temp.BANNED_USERS = b_users
@@ -75,15 +75,33 @@ class Bot(Client):
         # Start Premium Expiry Checker Loop
         self.loop.create_task(self.check_premium_expiry())
 
-        # Send Startup Log
+        # --- SEND STARTUP NOTIFICATION ---
+        try:
+            tz = pytz.timezone(TIME_ZONE)
+            start_time_str = datetime.now(tz).strftime("%d/%m/%Y %I:%M %p")
+        except:
+            start_time_str = str(datetime.now())
+
+        # 1. Send to LOG_CHANNEL
         if LOG_CHANNEL:
             try:
                 await self.send_message(
                     chat_id=LOG_CHANNEL,
-                    text=f"<b>🚀 {me.mention} Is Online!</b>\n\n<b>📅 Date:</b> <code>{time()}</code>"
+                    text=f"<b>🚀 {me.mention} Is Online!</b>\n\n<b>📅 Date:</b> <code>{start_time_str}</code>"
                 )
             except Exception as e:
-                logging.error(f"Failed to send log: {e}")
+                logging.error(f"Failed to send log to Log Channel: {e}")
+
+        # 2. Send to ADMINS (New Feature)
+        if ADMINS:
+            for admin_id in ADMINS:
+                try:
+                    await self.send_message(
+                        chat_id=admin_id,
+                        text=f"<b>🚀 {me.mention} Is Online!</b>\n\n<b>📅 Date:</b> <code>{start_time_str}</code>"
+                    )
+                except Exception as e:
+                    logging.error(f"Failed to send log to Admin {admin_id}: {e}")
 
     async def stop(self, *args):
         await super().stop()
@@ -105,10 +123,9 @@ class Bot(Client):
                         if not plan_status.get('premium') or not isinstance(expiry_date, datetime):
                             continue
                         
-                        # --- FIX: Ensure expiry_date is offset-aware ---
+                        # Ensure expiry_date is offset-aware
                         if expiry_date.tzinfo is None:
                             expiry_date = expiry_date.replace(tzinfo=timezone.utc)
-                        # -----------------------------------------------
 
                         # Calculate remaining time in seconds
                         now = datetime.now(timezone.utc)
