@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 BUTTONS = {}
 CAP = {}
 
+# --- 🔥 COMPILED REGEX FOR EXTENSIONS ---
+# यह लिस्ट नाम में से mp4, mkv, avi को हटा देगी
+EXT_PATTERN = re.compile(r"\b(mkv|mp4|avi|m4v|webm|flv|mov|wmv|3gp|mpg|mpeg)\b", re.IGNORECASE)
+
 # --- 🔍 PM SEARCH HANDLER ---
 @Client.on_message(filters.private & filters.text & filters.incoming)
 async def pm_search(client, message):
@@ -115,10 +119,15 @@ async def next_page(bot, query):
     settings = await get_settings(query.message.chat.id)
     del_msg = f"\n\n<b>⏳ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ ɪɴ <code>{get_readable_time(DELETE_TIME)}</code></b>" if settings["auto_delete"] else ''
     
-    # Link Mode Generation with 'l' fix
     files_link = ''
     for index, file in enumerate(files, start=offset+1):
-        f_name = file['file_name'].title().replace(" L ", " l ")
+        # 1. Remove Extensions
+        f_name = EXT_PATTERN.sub("", file['file_name'])
+        # 2. Clean Spaces
+        f_name = re.sub(r"\s+", " ", f_name).strip()
+        # 3. Title Case & L Fix
+        f_name = f_name.title().replace(" L ", " l ")
+        
         files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
 
     btn = []
@@ -176,10 +185,15 @@ async def auto_filter(client, msg, s, spoll=False):
     temp.FILES[key] = files
     BUTTONS[key] = search
     
-    # Link Mode Generation with 'l' fix
     files_link = ''
     for index, file in enumerate(files, start=1):
-        f_name = file['file_name'].title().replace(" L ", " l ")
+        # 1. Remove Extensions
+        f_name = EXT_PATTERN.sub("", file['file_name'])
+        # 2. Clean Spaces
+        f_name = re.sub(r"\s+", " ", f_name).strip()
+        # 3. Title Case & L Fix
+        f_name = f_name.title().replace(" L ", " l ")
+        
         files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
     
     btn = []
@@ -254,7 +268,13 @@ async def quality_search(client: Client, query: CallbackQuery):
 
     files_link = ''
     for index, file in enumerate(files, start=1):
-        f_name = file['file_name'].title().replace(" L ", " l ")
+        # 1. Remove Extensions
+        f_name = EXT_PATTERN.sub("", file['file_name'])
+        # 2. Clean Spaces
+        f_name = re.sub(r"\s+", " ", f_name).strip()
+        # 3. Title Case & L Fix
+        f_name = f_name.title().replace(" L ", " l ")
+        
         files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
 
     btn = []
@@ -272,7 +292,6 @@ async def quality_search(client: Client, query: CallbackQuery):
 # --- 🎛️ MAIN CALLBACK HANDLER ---
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    # 🔥 ERROR FIX: Check if query.message exists before using it
     if not query.message:
         return await query.answer("⚠️ Message not found (too old).", show_alert=True)
 
@@ -281,7 +300,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         try: await query.message.reply_to_message.delete()
         except: pass
         
-        # Delete Warning Message if ID exists
         if "#" in query.data:
             try:
                 warn_id = int(query.data.split("#")[1])
@@ -311,7 +329,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         ]]
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
 
-    # --- 💎 ACTIVATE PLAN ---
     elif query.data == 'activate_plan':
         q = await query.message.edit("<b>📅 Hᴏᴡ ᴍᴀɴʏ ᴅᴀʏs ᴅᴏ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ʙᴜʏ Pʀᴇᴍɪᴜᴍ?</b>\n\n<i>🔢 Send the number of days (e.g., 30, 365)</i>")
         try:
@@ -363,7 +380,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         except ListenerTimeout:
             await query.message.reply(f"<b>⏳ Sᴇssɪᴏɴ Exᴘɪʀᴇᴅ!</b>\nSend screenshot manually to {RECEIPT_SEND_USERNAME}")
 
-    # --- START/STATS/HELP ---
     elif query.data == "start":
         buttons = [[
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
@@ -403,12 +419,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         users = await db.total_users_count()
         chats = await db.total_chat_count()
         prm = await db.get_premium_count()
-        
         used_bytes, free_bytes = await db.get_db_size()
         used = get_size(used_bytes)
         free = get_size(free_bytes)
         uptime = get_readable_time(time_now() - temp.START_TIME)
-        
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='start')]]
         await query.message.edit_text(script.STATUS_TXT.format(files, users, chats, prm, used, free, uptime), reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -439,7 +453,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer(url=f"https://t.me/{temp.U_NAME}?start={mc}")
         await query.message.delete()
     
-    # --- 🗑️ DELETE HANDLERS ---
     elif query.data == "delete_all":
         await query.message.edit("<b>🗑️ Dᴇʟᴇᴛɪɴɢ Aʟʟ Fɪʟᴇs...</b>\n<i>This may take a while.</i>")
         total = await delete_files("") 
