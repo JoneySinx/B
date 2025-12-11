@@ -1,39 +1,102 @@
 import sys
+import io
 import os
+import time
 import traceback
-import html
-from io import StringIO
+import asyncio
+import subprocess
+from datetime import datetime
 from hydrogram import Client, filters
-from hydrogram.errors import MessageTooLong
 from info import ADMINS
+from database.users_chats_db import db
+from utils import temp
 
-# यदि आप चाहते हैं कि eval के अंदर database का उपयोग हो सके, तो उन्हें यहाँ इम्पोर्ट करें
-# from database.users_chats_db import db
-# from utils import temp
-
-@Client.on_message(filters.command("eval") & filters.user(ADMINS))
-async def executor(client, message):
-    try:
-        code = message.text.split(" ", 1)[1]
-    except IndexError:
-        return await message.reply('<b>Command Incomplete!</b>\nUsage: <code>/eval print("Hello")</code>')
-        
-    old_stderr = sys.stderr
-    old_stdout = sys.stdout
-    redirected_output = sys.stdout = StringIO()
-    redirected_error = sys.stderr = StringIO()
-    stdout, stderr, exc = None, None, None
+# --- SHELL / TERMINAL COMMAND (/sh) ---
+@Client.on_message(filters.command(["sh", "shell", "bash"]) & filters.user(ADMINS))
+async def shell_runner(client, message):
+    """Run Linux Terminal Commands via Bot"""
+    if len(message.command) < 2:
+        return await message.reply("<b>Usage:</b> `/sh git pull`")
+    
+    cmd_text = message.text.split(maxsplit=1)[1]
+    msg = await message.reply("<b>🏃 Running Terminal Command...</b>")
     
     try:
-        await aexec(code, client, message)
+        start_time = time.time()
+        process = await asyncio.create_subprocess_shell(
+            cmd_text,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        end_time = time.time()
+        
+        result = str(stdout.decode().strip()) + str(stderr.decode().strip())
+        taken = round(end_time - start_time, 3)
+        
+        if len(result) > 4000:
+            with open("terminal_output.txt", "w+", encoding="utf-8") as f:
+                f.write(result)
+            await message.reply_document(
+                "terminal_output.txt", 
+                caption=f"<b>🐚 Command:</b> `{cmd_text}`\n<b>⏱ Taken:</b> {taken}s"
+            )
+            await msg.delete()
+            os.remove("terminal_output.txt")
+        else:
+            if not result: result = "No Output"
+            await msg.edit(f"<b>🐚 Command:</b> `{cmd_text}`\n\n<pre>{result}</pre>\n\n<b>⏱ Taken:</b> {taken}s")
+            
+    except Exception as e:
+        await msg.edit(f"<b>❌ Error:</b>\n<pre>{e}</pre>")
+
+# --- PYTHON EVAL COMMAND (/eval) ---
+@Client.on_message(filters.command("eval") & filters.user(ADMINS))
+@Client.on_edited_message(filters.command("eval") & filters.user(ADMINS))
+async def executor(client, message):
+    """
+    Advanced Python Code Executor
+    Features: Live Edit, Auto-Imports, Shortcuts, Time Tracking
+    """
+    if len(message.command) < 2:
+        return await message.reply(f"<b>Usage:</b> `/eval print('hello')`")
+    
+    # 1. Prepare Code
+    try:
+        cmd = message.text.split(maxsplit=1)[1]
+    except IndexError:
+        return
+        
+    status_msg = await message.reply("<b>🔄 Processing...</b>")
+    
+    # 2. Setup Environment & Shortcuts
+    # Shortcuts: c=client, m=message, r=reply, db=database
+    reply_to = message.reply_to_message or message
+    
+    old_stderr = sys.stderr
+    old_stdout = sys.stdout
+    redirected_output = sys.stdout = io.StringIO()
+    redirected_error = sys.stderr = io.StringIO()
+    
+    stdout, stderr, exc = None, None, None
+    start_time = time.time()
+    
+    try:
+        # Create Async Function to allow 'await'
+        await aexec(cmd, client, message, reply_to)
     except Exception:
         exc = traceback.format_exc()
-        
+    
+    # 3. Capture Output
     stdout = redirected_output.getvalue()
     stderr = redirected_error.getvalue()
     sys.stdout = old_stdout
     sys.stderr = old_stderr
     
+    end_time = time.time()
+    taken = round(end_time - start_time, 3)
+
+    # 4. Format Result
     evaluation = ""
     if exc:
         evaluation = exc
@@ -42,29 +105,36 @@ async def executor(client, message):
     elif stdout:
         evaluation = stdout
     else:
-        evaluation = "Success!"
-        
-    # HTML escape बहुत जरूरी है ताकि टेलीग्राम HTML पार्सिंग एरर न दे
-    final_output = f"<b>Output:</b>\n\n<pre>{html.escape(evaluation)}</pre>"
-    
-    try:
-        await message.reply(final_output)
-    except MessageTooLong:
-        # यदि मैसेज बहुत बड़ा है तो फाइल के रूप में भेजें
-        try:
-            with open('eval.txt', 'w+', encoding='utf-8') as outfile:
-                outfile.write(str(evaluation))
-            await message.reply_document('eval.txt', caption="Evaluation Result")
-        except Exception as e:
-            await message.reply(f"<b>Error sending file:</b> {e}")
-        finally:
-            if os.path.exists('eval.txt'):
-                os.remove('eval.txt')
+        evaluation = "Success (No Output)"
 
-async def aexec(code, client, message):
-    # exec को async context में लपेटना
+    # 5. Send Result
+    final_output = f"<b>💻 Code:</b>\n<pre>{cmd[:50]}...</pre>\n\n<b>📤 Output:</b>\n<pre>{evaluation}</pre>\n\n<b>⏱ Taken:</b> {taken}s"
+    
+    if len(final_output) > 4096:
+        with open("eval_output.txt", "w+", encoding="utf-8") as f:
+            f.write(evaluation)
+        await message.reply_document(
+            "eval_output.txt",
+            caption=f"<b>💻 Code:</b> `{cmd[:50]}...`\n<b>⏱ Taken:</b> {taken}s"
+        )
+        await status_msg.delete()
+        os.remove("eval_output.txt")
+    else:
+        await status_msg.edit(final_output)
+
+async def aexec(code, client, message, reply_to):
+    # This wrapper allows using 'await' inside /eval
+    # Pre-loaded variables for convenience
     exec(
-        "async def __aexec(client, message): "
-        + "".join(f"\n {a}" for a in code.split("\n"))
+        f"async def __aexec(client, message, r, c, m, db, temp): " +
+        "".join(f"\n {l}" for l in code.split("\n"))
     )
-    return await locals()["__aexec"](client, message)
+    return await locals()["__aexec"](
+        client, 
+        message, 
+        reply_to,      # r
+        client,        # c
+        message,       # m
+        db,            # db
+        temp           # temp
+    )
