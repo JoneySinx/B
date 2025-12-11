@@ -4,8 +4,8 @@ import logging
 import asyncio
 import time
 import math
-import pytz # Fixed Import
-from datetime import datetime, timezone # Fixed Import
+import pytz
+from datetime import datetime, timezone
 from info import (
     LOG_CHANNEL, API_ID, API_HASH, BOT_TOKEN, 
     ADMINS, IS_PREMIUM, PRE_DAY_AMOUNT, PICS, 
@@ -30,9 +30,10 @@ class temp(object):
     SETTINGS = {} 
     CANCEL = False 
     MAINTENANCE = False
-    # --- ADDED MISSING ATTRIBUTES ---
     BANNED_USERS = []
     BANNED_CHATS = []
+    # --- ADDED FOR AUTO DELETE REMINDER ---
+    PREMIUM_REMINDERS = {} 
 
 # --- SETTINGS FUNCTIONS ---
 async def get_settings(group_id):
@@ -145,7 +146,7 @@ async def is_subscribed(client, message):
         return links
     return False
 
-# --- PREMIUM CHECKER (Fixed Timezone) ---
+# --- PREMIUM CHECKER ---
 async def is_premium(user_id, client):
     if not IS_PREMIUM:
         return True 
@@ -157,7 +158,6 @@ async def is_premium(user_id, client):
     if user.get('premium'):
         expire_date = user.get('expire')
         if expire_date and isinstance(expire_date, datetime):
-            # Check if expiry_date is naive (no timezone)
             if expire_date.tzinfo is None:
                 expire_date = expire_date.replace(tzinfo=timezone.utc)
             
@@ -179,9 +179,8 @@ def upload_image(path):
     except:
         return None
 
-# --- WISHES (Fixed Timezone) ---
+# --- WISHES ---
 def get_wish():
-    # Use pytz for specific location
     now = datetime.now(pytz.timezone("Asia/Kolkata"))
     t = now.strftime("%H")
     hour = int(t)
