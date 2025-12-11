@@ -1,47 +1,80 @@
 import logging
-from hydrogram import Client, filters
+from hydrogram import Client, filters, enums
 from info import INDEX_CHANNELS
 from database.ia_filterdb import save_file
 
-# लॉगिंग सेट करें ताकि हम कंसोल में देख सकें कि क्या हो रहा है
 logger = logging.getLogger(__name__)
 
+# मीडिया फिल्टर
 media_filter = filters.document | filters.video | filters.audio
 
 @Client.on_message(filters.chat(INDEX_CHANNELS) & media_filter)
-async def media(bot, message):
-    """Media Handler: इंडेक्स चैनलों से नई फाइलें सेव करता है"""
-    
-    media = None
-    file_type = None
-
-    # फ़ाइल प्रकार की पहचान करें
-    for type in ("document", "video", "audio"):
-        media_obj = getattr(message, type, None)
-        if media_obj is not None:
-            media = media_obj
-            file_type = type
-            break
-
-    # अगर कोई मीडिया नहीं है (सुरक्षा जांच)
-    if media is None:
+async def media_handler(bot, message):
+    """
+    Auto-Index with 2MB Limit & Smart Reactions
+    """
+    media = getattr(message, message.media.value, None)
+    if not media:
         return
 
-    # मीडिया ऑब्जेक्ट में एक्स्ट्रा जानकारी जोड़ें
-    media.file_type = file_type
-    media.caption = message.caption
+    # --- 1. JUNK FILTER (Reaction Added) ---
+    # अगर फाइल 2MB से छोटी है, तो उसे इग्नोर करें और 🗑️ दें
+    if media.file_size < 2 * 1024 * 1024: 
+        try: await message.react(emoji="🗑️")
+        except: pass
+        return
 
+    media.file_type = message.media.value
+    media.caption = message.caption
+    
     try:
-        # डेटाबेस में सेव करें (save_file async होना चाहिए)
         sts = await save_file(media)
         
+        # --- 2. VISUAL UI (Smart Reactions) ---
         if sts == 'suc':
-            logger.info(f"File Saved: {getattr(media, 'file_name', 'Unknown')}")
+            # नई फाइल सेव होने पर 'Sparkling Heart'
+            try: await message.react(emoji="💖")
+            except: pass
+            logger.info(f"Auto Indexed: {getattr(media, 'file_name', 'Unknown')}")
+            
         elif sts == 'dup':
+            # डुप्लीकेट फाइल पर 'Unicorn'
+            try: await message.react(emoji="🦄")
+            except: pass
             logger.info(f"File Already Exists: {getattr(media, 'file_name', 'Unknown')}")
+            
         elif sts == 'err':
+            # एरर आने पर 'Broken Heart'
+            try: await message.react(emoji="💔")
+            except: pass
             logger.error(f"Error Saving File: {getattr(media, 'file_name', 'Unknown')}")
             
     except Exception as e:
-        # अगर कोई क्रैश या एरर आता है, तो बॉट रुकेगा नहीं, बस लॉग करेगा
-        logger.error(f"Media Handler Error: {e}")
+        logger.error(f"Channel Handler Error: {e}")
+
+@Client.on_edited_message(filters.chat(INDEX_CHANNELS) & media_filter)
+async def media_edit_handler(bot, message):
+    """
+    Update Database when file is Edited
+    """
+    media = getattr(message, message.media.value, None)
+    if not media:
+        return
+
+    # 2MB Limit for Edits too
+    if media.file_size < 2 * 1024 * 1024:
+        try: await message.react(emoji="🗑️")
+        except: pass
+        return
+
+    media.file_type = message.media.value
+    media.caption = message.caption
+    
+    try:
+        await save_file(media)
+        # एडिट होने पर 'Writing Hand' रिएक्शन
+        try: await message.react(emoji="✍️")
+        except: pass
+        logger.info(f"File Updated (Edited): {getattr(media, 'file_name', 'Unknown')}")
+    except Exception as e:
+        logger.error(f"Channel Edit Error: {e}")
