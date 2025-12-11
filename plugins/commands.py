@@ -21,13 +21,13 @@ from info import (
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
     is_check_admin, get_shortlink, get_verify_status, update_verify_status, 
-    get_readable_time, get_wish, temp
+    get_readable_time, get_wish, temp, save_group_settings
 )
 
 logger = logging.getLogger(__name__)
-
-# Date-Time Format (DD/MM/YYYY HH:MM AM/PM)
 TIME_FMT = "%d/%m/%Y %I:%M %p"
+
+# --- HELPER FUNCTIONS ---
 
 async def get_grp_stg(group_id):
     settings = await get_settings(group_id)
@@ -53,6 +53,8 @@ async def del_stk(s):
     try: await s.delete()
     except: pass
 
+# --- START COMMAND ---
+
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
     if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
@@ -64,10 +66,9 @@ async def start(client, message):
         
         wish = get_wish()
         user = message.from_user.mention if message.from_user else "Dear"
-        btn = [[
-            InlineKeyboardButton('⚡️ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ ⚡️', url=UPDATES_LINK),
-            InlineKeyboardButton('💡 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ 💡', url=SUPPORT_LINK)
-        ]]
+        
+        # Support Group Removed
+        btn = [[InlineKeyboardButton('⚡️ ᴜᴘᴅᴀᴛᴇs ᴄʜᴀɴɴᴇʟ ⚡️', url=UPDATES_LINK)]]
         await message.reply(text=f"<b>ʜᴇʏ {user}, <i>{wish}</i>\nʜᴏᴡ ᴄᴀɴ ɪ ʜᴇʟᴘ ʏᴏᴜ??</b>", reply_markup=InlineKeyboardMarkup(btn))
         return 
         
@@ -79,52 +80,33 @@ async def start(client, message):
         await client.send_message(LOG_CHANNEL, script.NEW_USER_TXT.format(message.from_user.mention, message.from_user.id))
 
     if (len(message.command) != 2) or (len(message.command) == 2 and message.command[1] == 'start'):
-        buttons = [[
-            InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
-            InlineKeyboardButton('📚 Status 📊', callback_data='stats')
-        ],[
-            InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{temp.U_NAME}?start=premium")
-        ]]
-        reply_markup = InlineKeyboardMarkup(buttons)
-        await message.reply_photo(
-            photo=random.choice(PICS),
-            caption=script.START_TXT.format(message.from_user.mention, get_wish()),
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )
+        buttons = [[InlineKeyboardButton('👨‍🚒 Help', callback_data='help'), InlineKeyboardButton('📚 Status 📊', callback_data='stats')], [InlineKeyboardButton('🤑 Buy Subscription : Remove Ads', url=f"https://t.me/{temp.U_NAME}?start=premium")]]
+        # Sticker removed
+        await message.reply_photo(photo=random.choice(PICS), caption=script.START_TXT.format(message.from_user.mention, get_wish()), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
         return
 
     mc = message.command[1]
-
-    if mc == 'premium':
-        return await plan(client, message)
+    if mc == 'premium': return await plan(client, message)
     
     if mc.startswith('settings'):
         _, group_id = message.command[1].split("_")
-        if not await is_check_admin(client, int(group_id), message.from_user.id):
-            return await message.reply("You not admin in this group.")
+        if not await is_check_admin(client, int(group_id), message.from_user.id): return await message.reply("You not admin.")
         btn = await get_grp_stg(int(group_id))
-        chat = await client.get_chat(int(group_id))
-        return await message.reply(f"Change your settings for <b>'{chat.title}'</b> as your wish. ⚙", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
+        return await message.reply(f"Settings for <b>'{group_id}'</b>", reply_markup=InlineKeyboardMarkup(btn))
 
     btn = await is_subscribed(client, message)
     if btn:
         btn.append([InlineKeyboardButton("🔁 Try Again 🔁", callback_data=f"checksub#{mc}")])
-        await message.reply_photo(
-            photo=random.choice(PICS),
-            caption=f"👋 Hello {message.from_user.mention},\n\nPlease join my 'Updates Channel' and try again. 😇",
-            reply_markup=reply_markup,
-            parse_mode=enums.ParseMode.HTML
-        )
+        await message.reply_photo(photo=random.choice(PICS), caption=f"👋 Hello {message.from_user.mention},\nPlease join my 'Updates Channel'.", reply_markup=InlineKeyboardMarkup(btn))
         return 
         
     if mc.startswith('all'):
         try: _, grp_id, key = mc.split("_", 2)
         except ValueError: return await message.reply("Invalid link format")
-            
+        
         files = temp.FILES.get(key)
-        if not files: return await message.reply('No Such All Files Exist! (Link expired or bot restarted)')
-            
+        if not files: return await message.reply('No Such All Files Exist!')
+        
         settings = await get_settings(int(grp_id))
         total_files = await message.reply(f"<b><i>🗂 Total files - <code>{len(files)}</code></i></b>", parse_mode=enums.ParseMode.HTML)
         
@@ -147,7 +129,7 @@ async def start(client, message):
             file_ids.append(msg.id)
 
         time = get_readable_time(PM_FILE_DELETE_TIME)
-        vp = await message.reply(f"Nᴏᴛᴇ: Tʜɪs ғɪʟᴇs ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time} ᴛᴏ ᴀᴠᴏɪᴅ ᴄᴏᴘʏʀɪɢʜᴛs. Sᴀᴠᴇ ᴛʜᴇ ғɪʟᴇs ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ")
+        vp = await message.reply(f"Nᴏᴛᴇ: Tʜɪs ғɪʟᴇs ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time}...")
         file_ids.append(vp.id)
         
         await asyncio.sleep(PM_FILE_DELETE_TIME)
@@ -159,8 +141,7 @@ async def start(client, message):
             
         gone_msg = await message.reply("Tʜᴇ ғɪʟᴇ ʜᴀs ʙᴇᴇɴ ɢᴏɴᴇ ! Cʟɪᴄᴋ ɢɪᴠᴇɴ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ɪᴛ ᴀɢᴀɪɴ.", reply_markup=InlineKeyboardMarkup(buttons))
         
-        # 12 Hours Delete
-        await asyncio.sleep(43200)
+        await asyncio.sleep(43200) # 12 Hours
         try: await gone_msg.delete()
         except: pass
         return
@@ -189,7 +170,7 @@ async def start(client, message):
     )
     
     time = get_readable_time(PM_FILE_DELETE_TIME)
-    msg = await vp.reply(f"Nᴏᴛᴇ: Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time} ᴛᴏ ᴀᴠᴏɪᴅ ᴄᴏᴘʏʀɪɢʜᴛs. Sᴀᴠᴇ ᴛʜᴇ ғɪʟᴇ ᴛᴏ sᴏᴍᴇᴡʜᴇʀᴇ ᴇʟsᴇ")
+    msg = await vp.reply(f"Nᴏᴛᴇ: Tʜɪs ᴍᴇssᴀɢᴇ ᴡɪʟʟ ʙᴇ ᴅᴇʟᴇᴛᴇ ɪɴ {time}...")
 
     await asyncio.sleep(PM_FILE_DELETE_TIME)
     try:
@@ -200,28 +181,27 @@ async def start(client, message):
     btns = [[InlineKeyboardButton('ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ', callback_data=f"get_del_file#{grp_id}#{file_id}")]]
     gone_msg = await message.reply("Tʜᴇ ғɪʟᴇ ʜᴀs ʙᴇᴇɴ ɢᴏɴᴇ ! Cʟɪᴄᴋ ɢɪᴠᴇɴ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ɪᴛ ᴀɢᴀɪɴ.", reply_markup=InlineKeyboardMarkup(btns))
     
-    # 12 Hours Delete
-    await asyncio.sleep(43200)
+    await asyncio.sleep(43200) # 12 Hours
     try: await gone_msg.delete()
     except: pass
+
+# --- ADMIN COMMANDS ---
 
 @Client.on_message(filters.command('delete') & filters.user(ADMINS))
 async def delete_file(bot, message):
     try: query = message.text.split(" ", 1)[1]
-    except: return await message.reply_text("Command Incomplete!\nUsage: /delete query")
+    except: return await message.reply_text("Usage: /delete query")
     btn = [[InlineKeyboardButton("YES", callback_data=f"delete_{query}")],[InlineKeyboardButton("CLOSE", callback_data="close_data")]]
-    await message.reply_text(f"Do you want to delete all files matching: <b>{query}</b> ?", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
+    await message.reply_text(f"Delete files matching: <b>{query}</b> ?", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
 @Client.on_message(filters.command('delete_all') & filters.user(ADMINS))
 async def delete_all_index(bot, message):
     btn = [[InlineKeyboardButton("YES", callback_data="delete_all")],[InlineKeyboardButton("CLOSE", callback_data="close_data")]]
-    await message.reply_text("Do you want to delete <b>ALL</b> indexed files? This action cannot be undone.", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
+    await message.reply_text("Delete <b>ALL</b> files? Cannot undo.", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
 @Client.on_message(filters.command('stats'))
 async def stats(bot, message):
-    if message.from_user.id not in ADMINS:
-        await message.delete()
-        return
+    if message.from_user.id not in ADMINS: return await message.delete()
     files = await db_count_documents()
     users = await db.total_users_count()
     chats = await db.total_chat_count()
@@ -307,6 +287,8 @@ async def ping(client, message):
     end_time = monotonic()
     await msg.edit(f'{round((end_time - start_time) * 1000)} ms')
 
+# --- PREMIUM COMMANDS ---
+
 @Client.on_message(filters.command('plan') & filters.private)
 async def plan(client, message):
     if not IS_PREMIUM: return await message.reply('Premium feature was disabled by admin')
@@ -317,8 +299,6 @@ async def plan(client, message):
 async def myplan(client, message):
     if not IS_PREMIUM: 
         return await message.reply('Premium feature is currently disabled by Admin.')
-    
-    # Check if User is Admin
     if message.from_user.id in ADMINS: 
         return await message.reply(f"<b>👑 Hello Admin {message.from_user.mention}!</b>\n\nYou have <b>Lifetime Premium Access</b> because you are the owner. 😎")
     
@@ -329,7 +309,6 @@ async def myplan(client, message):
         btn = [[InlineKeyboardButton('💎 Activate Plan', callback_data='activate_plan')]]
         return await message.reply("<b>❌ No Active Plan</b>\n\nYou are currently a free user. Upgrade to Premium to remove ads and unlock features.", reply_markup=InlineKeyboardMarkup(btn))
     
-    # Format Expiry Date with Time
     expire_date = mp.get('expire')
     if isinstance(expire_date, datetime):
         readable_date = expire_date.strftime(TIME_FMT)
@@ -356,10 +335,7 @@ async def add_prm(bot, message):
         mp['premium'] = True
         await db.update_plan(user.id, mp)
         
-        # Log with Time
         await bot.send_message(LOG_CHANNEL, f"#Premium_Added\n\n👤 <b>User:</b> {user.mention} (`{user.id}`)\n🗓 <b>Plan:</b> {d} Days\n⏰ <b>Expires:</b> {ex.strftime(TIME_FMT)}\n👮‍♂️ <b>Added By:</b> {message.from_user.mention}")
-        
-        # Reply with Time
         await message.reply(f"Given premium to {user.mention}\nExpire: {ex.strftime(TIME_FMT)}")
         try: await bot.send_message(user.id, f"Your now premium user\nExpire: {ex.strftime(TIME_FMT)}")
         except: pass
@@ -397,7 +373,6 @@ async def prm_list(bot, message):
             try: u = await bot.get_users(user['id']); mention = u.mention
             except: mention = "Unknown User"
             
-            # Format with Time
             expiry = user['status']['expire']
             if isinstance(expiry, datetime):
                 exp_str = expiry.strftime(TIME_FMT)
@@ -414,7 +389,8 @@ async def prm_list(bot, message):
             os.remove('premium_users.txt')
             await tx.delete()
 
-# --- ADMIN TOGGLES ---
+# --- ADMIN TOGGLES & MANAGEMENT ---
+
 @Client.on_message(filters.command(['add_fsub', 'set_fsub']) & filters.user(ADMINS))
 async def add_fsub_cmd(client, message):
     if len(message.command) < 2: return await message.reply("<b>Usage:</b> <code>/add_fsub -100xxxxxx</code>")
@@ -460,7 +436,6 @@ async def on_pm_search(bot, message):
     await db.update_bot_sttgs('PM_SEARCH', True)
     await message.reply('Successfully turned on pm search')
 
-# --- ADMIN MANAGEMENT ---
 @Client.on_message(filters.command('restart') & filters.user(ADMINS))
 async def restart_bot(bot, message):
     msg = await message.reply("Restarting...")
@@ -469,13 +444,12 @@ async def restart_bot(bot, message):
 
 @Client.on_message(filters.command('leave') & filters.user(ADMINS))
 async def leave_a_chat(bot, message):
-    if len(message.command) == 1: return await message.reply('Give me a chat ID')
-    try: chat = int(message.command[1])
-    except: return await message.reply('Give me a valid chat ID')
-    try:
-        await bot.send_message(chat_id=chat, text='My owner has told me to leave. Bye!')
-        await bot.leave_chat(chat)
-        await message.reply(f"Successfully left group: `{chat}`")
+    if len(message.command) == 1: return await message.reply('Usage: /leave chat_id')
+    try: 
+        chat_id_arg = int(message.command[1])
+        await bot.send_message(chat_id=chat_id_arg, text='Bye!')
+        await bot.leave_chat(chat_id_arg)
+        await message.reply(f"Left: `{chat_id_arg}`")
     except Exception as e: await message.reply(f'Error: {e}')
 
 @Client.on_message(filters.command('users') & filters.user(ADMINS))
@@ -550,7 +524,8 @@ async def enable_chat(bot, message):
         await message.reply(f"Chat {chat} Enabled.")
     except Exception as e: await message.reply(f"Error: {e}")
 
-# --- GROUP ADMIN COMMANDS ---
+# --- GROUP MODERATION ---
+
 @Client.on_message(filters.command('ban') & filters.group)
 async def ban_chat_user(client, message):
     if not await is_check_admin(client, message.chat.id, message.from_user.id): return await message.reply_text('You not admin.')
@@ -578,7 +553,8 @@ async def unban_chat_user(client, message):
         await message.reply(f"Unbanned/Unmuted {message.reply_to_message.from_user.mention}")
     except Exception as e: await message.reply(f"Error: {e}")
 
-# --- CONFIRM PAYMENT HANDLER ---
+# --- PAYMENT CONFIRMATION ---
+
 @Client.on_callback_query(filters.regex(r'^confirm_pay'))
 async def confirm_payment_handler(client, query):
     if query.from_user.id not in ADMINS: return await query.answer("Not Authorized", show_alert=True)
@@ -602,7 +578,6 @@ async def confirm_payment_handler(client, query):
         
         user_info = await client.get_users(user_id)
         
-        # Log Message (With Time)
         await client.send_message(
             LOG_CHANNEL, 
             f"#Premium_Added (Payment)\n\n👤 <b>User:</b> {user_info.mention} (`{user_id}`)\n🗓 <b>Plan:</b> {final_days} Days\n⏰ <b>Expires:</b> {ex.strftime(TIME_FMT)}\n👮‍♂️ <b>Approved By:</b> {query.from_user.mention}"
@@ -611,7 +586,6 @@ async def confirm_payment_handler(client, query):
         try: await ask_msg.delete(); await msg.delete()
         except: pass
         
-        # Admin Confirmation (With Time)
         await client.send_message(query.message.chat.id, f"<b>✅ Premium Activated!</b>\nUser: {user_id}\nDays: {final_days}\nExpire: {ex.strftime(TIME_FMT)}")
         await query.message.edit_reply_markup(reply_markup=None)
         try: await client.send_message(user_id, f"<b>🥳 Payment Accepted!</b>\n\nYour Premium plan for <b>{final_days} Days</b> has been activated.")
