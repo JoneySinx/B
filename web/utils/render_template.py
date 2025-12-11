@@ -7,7 +7,7 @@ from utils import temp
 # लॉगिंग सेटअप
 logger = logging.getLogger(__name__)
 
-# --- HTML TEMPLATE (With Dark/Light Toggle) ---
+# --- HTML TEMPLATE (With Dark/Light Toggle & Clean Player) ---
 watch_tmplt = """
 <!DOCTYPE html>
 <html lang="en">
@@ -63,7 +63,7 @@ watch_tmplt = """
             z-index: 100;
             display: flex;
             align-items: center;
-            justify-content: space-between; /* Space for toggle button */
+            justify-content: space-between;
         }
         .brand { font-weight: 700; font-size: 1.25rem; color: var(--primary); text-transform: uppercase; letter-spacing: 1px; }
 
@@ -108,7 +108,6 @@ watch_tmplt = """
             transition: all 0.2s ease; font-size: 0.95rem;
         }
         
-        /* Primary Button (Invert colors based on theme) */
         .btn-primary { background: var(--text-main); color: var(--bg-color); }
         .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
         
@@ -161,9 +160,9 @@ watch_tmplt = """
     <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            // Player Setup
+            // Player Setup (REMOVED 'mute' and 'volume')
             const player = new Plyr('#player', {
-                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
+                controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'captions', 'settings', 'pip', 'airplay', 'fullscreen'],
                 settings: ['captions', 'quality', 'speed'],
                 keyboard: { focused: true, global: true },
             });
@@ -174,7 +173,6 @@ watch_tmplt = """
             const moonIcon = document.getElementById('moon-icon');
             const html = document.documentElement;
 
-            // Check Saved Theme
             const currentTheme = localStorage.getItem('theme');
             if (currentTheme === 'light') {
                 html.setAttribute('data-theme', 'light');
@@ -207,7 +205,6 @@ watch_tmplt = """
 # --- MAIN FUNCTION ---
 async def media_watch(message_id):
     try:
-        # 1. Message Fetching
         media_msg = await temp.BOT.get_messages(BIN_CHANNEL, message_id)
         if not media_msg or not media_msg.media:
             return '<h1>File not found or deleted</h1>'
@@ -216,20 +213,16 @@ async def media_watch(message_id):
         if not media:
             return '<h1>Unsupported Media Type</h1>'
 
-        # 2. Extract Details
         file_name = getattr(media, 'file_name', 'Unknown File')
         mime_type = getattr(media, 'mime_type', 'application/octet-stream')
         
-        # 3. Stream Link Generation
         base_url = URL[:-1] if URL.endswith('/') else URL
         src = f"{base_url}/download/{message_id}"
         
-        # 4. Thumbnail Logic
         poster_url = "https://i.ibb.co/M8S0Zzj/live-streaming.png"
         if getattr(media, "thumbs", None) or getattr(media, "thumb", None):
              poster_url = f"{base_url}/thumbnail/{message_id}"
 
-        # 5. Render Template
         safe_heading = html.escape(f'Watch - {file_name}')
         safe_filename = html.escape(file_name)
             
