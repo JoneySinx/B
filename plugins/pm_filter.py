@@ -53,15 +53,17 @@ async def pm_search(client, message):
 # --- 🏘️ GROUP SEARCH HANDLER ---
 @Client.on_message(filters.group & filters.text & filters.incoming)
 async def group_search(client, message):
-    # 🛑 SUPPORT GROUP CHECK 🛑
-    if message.chat.id == SUPPORT_GROUP:
+    # 🛑 SUPPORT GROUP CHECK (No Search + Auto Delete Links) 🛑
+    # 🔥 FIXED: We check if SUPPORT_GROUP is not None/0 before comparison.
+    if SUPPORT_GROUP and message.chat.id == SUPPORT_GROUP:
+        # Link Delete Logic (5 Minutes)
         if re.findall(r'https?://\S+|www\.\S+|t\.me/\S+', message.text):
             async def delete_link():
                 await asyncio.sleep(300) # 5 Minutes Wait
                 try: await message.delete()
                 except: pass
             asyncio.create_task(delete_link())
-        return
+        return # STOP SEARCH
 
     user_id = message.from_user.id if message.from_user else 0
     
@@ -446,12 +448,11 @@ async def cb_handler(client: Client, query: CallbackQuery):
         await query.answer(url=f"https://t.me/{temp.U_NAME}?start={mc}")
         await query.message.delete()
     
-    # --- 🔥 FIXED DELETE HANDLERS ---
     elif query.data == "delete_all":
         try:
             await query.message.edit("<b>🗑️ Dᴇʟᴇᴛɪɴɢ Aʟʟ Fɪʟᴇs...</b>\n<i>This may take a while.</i>")
         except MessageNotModified:
-            pass # Already edited
+            pass
             
         total = await delete_files("") 
         
