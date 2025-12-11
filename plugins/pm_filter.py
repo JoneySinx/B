@@ -35,7 +35,6 @@ async def pm_search(client, message):
     if message.text.startswith("/"):
         return
         
-    # 🔒 Strict Premium Check
     if not await is_premium(message.from_user.id, client):
         return
 
@@ -53,7 +52,6 @@ async def pm_search(client, message):
 async def group_search(client, message):
     user_id = message.from_user.id if message.from_user else 0
     
-    # 🔒 Strict Premium Check
     if not await is_premium(user_id, client):
         return
 
@@ -117,20 +115,19 @@ async def next_page(bot, query):
     settings = await get_settings(query.message.chat.id)
     del_msg = f"\n\n<b>⏳ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ ɪɴ <code>{get_readable_time(DELETE_TIME)}</code></b>" if settings["auto_delete"] else ''
     
-    # Link Mode Generation (Title Case Added)
+    # Link Mode Generation with 'l' fix
     files_link = ''
     for index, file in enumerate(files, start=offset+1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
+        f_name = file['file_name'].title().replace(" L ", " l ")
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
 
     btn = []
     
-    # Top Action Buttons
     btn.insert(0, [
         InlineKeyboardButton("♻️ Sᴇɴᴅ Aʟʟ", url=f"https://t.me/{temp.U_NAME}?start=all_{query.message.chat.id}_{key}"),
         InlineKeyboardButton("⚙️ Qᴜᴀʟɪᴛʏ", callback_data=f"quality#{key}#{req}#{offset}")
     ])
 
-    # Pagination Logic
     if 0 < offset <= MAX_BTN:
         off_set = 0
     elif offset == 0:
@@ -163,7 +160,6 @@ async def auto_filter(client, msg, s, spoll=False):
     search = re.sub(r"\s+", " ", re.sub(r"[-:\"';!]", " ", message.text)).strip()
     files, offset, total_results = await get_search_results(search)
     
-    # Google Spell Check
     if not files:
         google_search_url = f"https://www.google.com/search?q={urllib.parse.quote(search)}"
         btn = [[InlineKeyboardButton("🔍 Cʜᴇᴄᴋ Sᴘᴇʟʟɪɴɢ ᴏɴ Gᴏᴏɢʟᴇ", url=google_search_url)]]
@@ -180,10 +176,11 @@ async def auto_filter(client, msg, s, spoll=False):
     temp.FILES[key] = files
     BUTTONS[key] = search
     
-    # Link Mode Generation (Title Case Added)
+    # Link Mode Generation with 'l' fix
     files_link = ''
     for index, file in enumerate(files, start=1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
+        f_name = file['file_name'].title().replace(" L ", " l ")
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
     
     btn = []
     
@@ -203,7 +200,6 @@ async def auto_filter(client, msg, s, spoll=False):
 
     k = await s.edit_text(cap + del_msg, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
     
-    # Auto Delete & Gone Message
     if settings["auto_delete"]:
         await asyncio.sleep(DELETE_TIME)
         try: await k.delete()
@@ -258,7 +254,8 @@ async def quality_search(client: Client, query: CallbackQuery):
 
     files_link = ''
     for index, file in enumerate(files, start=1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
+        f_name = file['file_name'].title().replace(" L ", " l ")
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {f_name}</a></b>"""
 
     btn = []
     btn.insert(0, [
@@ -275,13 +272,12 @@ async def quality_search(client: Client, query: CallbackQuery):
 # --- 🎛️ MAIN CALLBACK HANDLER ---
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    # 🔥 FIXED CLOSE LOGIC WITH WARNING MESSAGE DELETE
     if query.data.startswith("close_data"):
         await query.message.delete()
         try: await query.message.reply_to_message.delete()
         except: pass
         
-        # Check if Warning ID is passed (close_data#123)
+        # Delete Warning Message if ID exists
         if "#" in query.data:
             try:
                 warn_id = int(query.data.split("#")[1])
@@ -311,7 +307,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         ]]
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(btn))
 
-    # --- 💎 ACTIVATE PLAN (PAYMENT UI) ---
+    # --- 💎 ACTIVATE PLAN ---
     elif query.data == 'activate_plan':
         q = await query.message.edit("<b>📅 Hᴏᴡ ᴍᴀɴʏ ᴅᴀʏs ᴅᴏ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ʙᴜʏ Pʀᴇᴍɪᴜᴍ?</b>\n\n<i>🔢 Send the number of days (e.g., 30, 365)</i>")
         try:
@@ -363,7 +359,7 @@ async def cb_handler(client: Client, query: CallbackQuery):
         except ListenerTimeout:
             await query.message.reply(f"<b>⏳ Sᴇssɪᴏɴ Exᴘɪʀᴇᴅ!</b>\nSend screenshot manually to {RECEIPT_SEND_USERNAME}")
 
-    # --- HELP/STATS/START UI ---
+    # --- START/STATS/HELP ---
     elif query.data == "start":
         buttons = [[
             InlineKeyboardButton('👨‍🚒 Help', callback_data='help'),
@@ -403,12 +399,10 @@ async def cb_handler(client: Client, query: CallbackQuery):
         users = await db.total_users_count()
         chats = await db.total_chat_count()
         prm = await db.get_premium_count()
-        
         used_bytes, free_bytes = await db.get_db_size()
         used = get_size(used_bytes)
         free = get_size(free_bytes)
         uptime = get_readable_time(time_now() - temp.START_TIME)
-        
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='start')]]
         await query.message.edit_text(script.STATUS_TXT.format(files, users, chats, prm, used, free, uptime), reply_markup=InlineKeyboardMarkup(buttons))
 
