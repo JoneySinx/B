@@ -117,10 +117,10 @@ async def next_page(bot, query):
     settings = await get_settings(query.message.chat.id)
     del_msg = f"\n\n<b>⏳ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ ɪɴ <code>{get_readable_time(DELETE_TIME)}</code></b>" if settings["auto_delete"] else ''
     
-    # Link Mode Generation
+    # Link Mode Generation (Title Case Added)
     files_link = ''
     for index, file in enumerate(files, start=offset+1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
 
     btn = []
     
@@ -180,10 +180,10 @@ async def auto_filter(client, msg, s, spoll=False):
     temp.FILES[key] = files
     BUTTONS[key] = search
     
-    # Link Mode Generation
+    # Link Mode Generation (Title Case Added)
     files_link = ''
     for index, file in enumerate(files, start=1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
     
     btn = []
     
@@ -258,7 +258,7 @@ async def quality_search(client: Client, query: CallbackQuery):
 
     files_link = ''
     for index, file in enumerate(files, start=1):
-        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name']}</a></b>"""
+        files_link += f"""\n\n<b>{index}. <a href=https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file['_id']}>[{get_size(file['file_size'])}] {file['file_name'].title()}</a></b>"""
 
     btn = []
     btn.insert(0, [
@@ -275,10 +275,18 @@ async def quality_search(client: Client, query: CallbackQuery):
 # --- 🎛️ MAIN CALLBACK HANDLER ---
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
-    if query.data == "close_data":
+    # 🔥 FIXED CLOSE LOGIC WITH WARNING MESSAGE DELETE
+    if query.data.startswith("close_data"):
         await query.message.delete()
         try: await query.message.reply_to_message.delete()
         except: pass
+        
+        # Check if Warning ID is passed (close_data#123)
+        if "#" in query.data:
+            try:
+                warn_id = int(query.data.split("#")[1])
+                await client.delete_messages(chat_id=query.message.chat.id, message_ids=warn_id)
+            except: pass
 
     elif query.data.startswith("file"):
         ident, file_id = query.data.split("#")
@@ -343,7 +351,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         try:
             receipt = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id, timeout=600)
             if receipt.photo or receipt.document:
-                # Send to Admin
                 btn = [[InlineKeyboardButton(f"✅ Confirm Payment ({days} Days)", callback_data=f"confirm_pay#{query.from_user.id}#{days}")]]
                 await receipt.copy(
                     chat_id=RECEIPT_SEND_USERNAME, 
