@@ -119,7 +119,9 @@ Just type the <b>Movie or Series Name</b> in the Group or PM."""
 <b>👥 Tᴏᴛᴀʟ Mᴇᴍʙᴇʀs:</b> <code>{}</code>"""
 
     # --- ⚠️ LEGACY VARIABLES ---
-    NOT_FILE_TXT = """👋 Hᴇʟʟᴏ {},<br><br>I ᴄᴀɴ'ᴛ ғɪɴᴅ <b>{}</b> ɪɴ ᴍʏ ᴅᴀᴛᴀʙᴀsᴇ! 🥲"""
+    NOT_FILE_TXT = """👋 Hᴇʟʟᴏ {},
+
+I ᴄᴀɴ'ᴛ ғɪɴᴅ <b>{}</b> ɪɴ ᴍʏ ᴅᴀᴛᴀʙᴀsᴇ! 🥲"""
     IMDB_TEMPLATE = """✅ I Fᴏᴜɴᴅ: <code>{query}</code>""" 
     FILE_CAPTION = """<b>📂 {file_name}</b>\n<b>💾 Sɪᴢᴇ: {file_size}</b>"""
     WELCOME_TEXT = """<b>👋 Hᴇʟʟᴏ {mention}, Wᴇʟᴄᴏᴍᴇ ᴛᴏ {title}!</b>"""
