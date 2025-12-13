@@ -8,10 +8,11 @@ from time import monotonic
 
 from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
-from hydrogram.errors import MessageTooLong
+from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait
 
 from Script import script
-from database.ia_filterdb import db_count_documents, delete_files
+# Updated imports for new DB functions
+from database.ia_filterdb import db_count_documents, delete_files, save_file, get_file_details
 from database.users_chats_db import db
 from info import (
     IS_PREMIUM, PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME, URL, BIN_CHANNEL, 
@@ -59,7 +60,6 @@ async def start(client, message):
             await db.add_chat(message.chat.id, message.chat.title)
         
         wish = get_wish()
-        # Safe mention check for groups
         user = message.from_user.mention if message.from_user else "Friend"
         
         btn = [[InlineKeyboardButton('⚡️ Jᴏɪɴ Uᴘᴅᴀᴛᴇs', url=UPDATES_LINK)]]
@@ -70,7 +70,6 @@ async def start(client, message):
     try: await message.react(emoji=random.choice(REACTIONS), big=True)
     except: pass
 
-    # 🔥 CRITICAL FIX: Check if User exists (Prevents Crash in Channels)
     if not message.from_user:
         return
 
@@ -156,7 +155,6 @@ async def start(client, message):
     try: type_, grp_id, file_id = mc.split("_", 2)
     except ValueError: return await message.reply("❌ Invalid Link")
     
-    from database.ia_filterdb import get_file_details
     files_ = await get_file_details(file_id)
     if not files_: return await message.reply('<b>⚠️ Fɪʟᴇ Nᴏᴛ Fᴏᴜɴᴅ!</b>')
         
@@ -201,7 +199,138 @@ async def start(client, message):
     try: await gone_msg.delete()
     except: pass
 
-# --- ADMIN COMMANDS ---
+# --- ⚙️ ADMIN PANEL ENTRY POINT (NEW) ---
+@Client.on_message(filters.command(["admin", "settings"]) & filters.user(ADMINS))
+async def admin_panel(client, message):
+    config = await db.get_config()
+    
+    mode = config.get('search_mode', 'hybrid').upper()
+    shortner = "🟢 ON" if config.get('shortlink_enable') else "🔴 OFF"
+    
+    text = (
+        f"<b>⚙️ <u>ADVANCED BOT CONTROL PANEL</u></b>\n\n"
+        f"<b>🔍 Search Mode:</b> {mode}\n"
+        f"<b>🔗 Shortlink:</b> {shortner}\n"
+        f"<b>🛡️ Maintenance:</b> {'ON' if config.get('is_maintenance') else 'OFF'}\n\n"
+        f"<i>Select a category to manage:</i>"
+    )
+    
+    buttons = [
+        [
+            InlineKeyboardButton("🗄️ Database Manager", callback_data="admin_db_menu"),
+            InlineKeyboardButton("📺 Channel Config", callback_data="admin_channel_menu")
+        ],
+        [
+            InlineKeyboardButton("🔗 Shortner Settings", callback_data="admin_shortner_menu"),
+            InlineKeyboardButton("🤖 Clone Bot Manager", callback_data="admin_clone_menu")
+        ],
+        [InlineKeyboardButton("❌ Close", callback_data="close_data")]
+    ]
+    
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+# --- 📂 INDEXING COMMAND (DUAL DB SUPPORT) ---
+@Client.on_message(filters.command("index") & filters.user(ADMINS))
+async def index_handler(client, message):
+    if len(message.command) != 2:
+        return await message.reply("<b>❌ Invalid Format!</b>\nUse: `/index [Channel ID]`")
+    
+    try:
+        channel_id = int(message.command[1])
+    except ValueError:
+        return await message.reply("<b>❌ Error:</b> Channel ID must be an integer.")
+
+    try:
+        chat = await client.get_chat(channel_id)
+    except Exception as e:
+        return await message.reply(f"<b>❌ Error:</b> Could not access channel.\n`{e}`")
+
+    # 🔥 CHOICE: Admin chooses target DB
+    text = (
+        f"<b>📂 INDEXING MANAGER</b>\n\n"
+        f"<b>📢 Channel:</b> {chat.title}\n"
+        f"<b>🆔 ID:</b> <code>{channel_id}</code>\n\n"
+        f"<i>Select the target database for files from this channel:</i>"
+    )
+    
+    buttons = [
+        [
+            InlineKeyboardButton("📂 Save to Primary DB", callback_data=f"index_start#primary#{channel_id}"),
+            InlineKeyboardButton("🗄️ Save to Backup DB", callback_data=f"index_start#backup#{channel_id}")
+        ],
+        [InlineKeyboardButton("❌ Cancel", callback_data="close_data")]
+    ]
+    
+    await message.reply(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+# --- 📥 INDEXING CALLBACK (ACTUAL PROCESS) ---
+@Client.on_callback_query(filters.regex(r"^index_start"))
+async def index_process_start(bot, query):
+    _, target_db, channel_id = query.data.split("#")
+    channel_id = int(channel_id)
+    
+    await query.message.edit(
+        f"<b>🔄 Processing Started...</b>\n\n"
+        f"<b>🎯 Target:</b> {target_db.upper()} Database\n"
+        f"<i>Please wait while I fetch messages...</i>"
+    )
+    
+    total_files = 0
+    duplicate = 0
+    errors = 0
+    deleted = 0
+    no_media = 0
+    
+    # Run in background
+    asyncio.create_task(index_files_to_db(bot, query.message, channel_id, target_db, total_files, duplicate, errors, deleted, no_media))
+
+
+# --- 🔄 INDEXING BACKGROUND TASK ---
+async def index_files_to_db(client, message, chat_id, target_db, total_files, duplicate, errors, deleted, no_media):
+    try:
+        msg = await message.reply("<b>📥 Initializing Indexing...</b>")
+        
+        async for message in client.get_chat_history(chat_id):
+            if message.media:
+                media = getattr(message, message.media.value)
+                # Save with Target DB (New Feature)
+                sts = await save_file(media, target_db=target_db)
+                
+                if sts == 'suc':
+                    total_files += 1
+                elif sts == 'dup':
+                    duplicate += 1
+                elif sts == 'err':
+                    errors += 1
+            else:
+                no_media += 1
+
+            if total_files % 20 == 0:
+                try:
+                    await msg.edit(
+                        f"<b>🔄 Indexing in Progress...</b>\n\n"
+                        f"<b>🎯 Target DB:</b> {target_db.upper()}\n"
+                        f"<b>✅ Saved:</b> {total_files}\n"
+                        f"<b>♻️ Duplicates:</b> {duplicate}\n"
+                        f"<b>⚠️ Errors:</b> {errors}"
+                    )
+                except: pass
+        
+        await msg.edit(
+            f"<b>✅ Indexing Completed!</b>\n\n"
+            f"<b>🎯 Target DB:</b> {target_db.upper()}\n"
+            f"<b>📂 Total Saved:</b> {total_files}\n"
+            f"<b>♻️ Duplicates:</b> {duplicate}\n"
+            f"<b>🗑️ Skipped:</b> {no_media + errors}"
+        )
+        
+    except Exception as e:
+        await message.reply(f"<b>❌ Critical Error during indexing:</b>\n`{e}`")
+
+
+# --- ADMIN COMMANDS (EXISTING) ---
 
 @Client.on_message(filters.command('delete') & filters.user(ADMINS))
 async def delete_file(bot, message):
@@ -400,7 +529,8 @@ async def prm_list(bot, message):
             
             expiry = user['status']['expire']
             exp_str = expiry.strftime(TIME_FMT) if isinstance(expiry, datetime) else "Unlimited"
-            out += f"<b>{count}.</b> {mention} (`{user['id']}`) | ⏳ {exp_str}\n"
+            out += f"<b>{count}.</b> {mention} (`{user['id']}`
+) | ⏳ {exp_str}\n"
             
     if count == 0: await tx.edit_text("<b>❌ Nᴏ Pʀᴇᴍɪᴜᴍ Usᴇʀs Fᴏᴜɴᴅ.</b>")
     else:
@@ -408,81 +538,3 @@ async def prm_list(bot, message):
         except MessageTooLong:
             with open('premium_users.txt', 'w+') as f: f.write(out.replace('<b>', '').replace('</b>', '').replace('`', ''))
             await message.reply_document('premium_users.txt', caption="💎 Premium Users List")
-            os.remove('premium_users.txt')
-            await tx.delete()
-
-# --- MODERATION COMMANDS ---
-
-@Client.on_message(filters.command('ban') & filters.group)
-async def ban_chat_user(client, message):
-    if not await is_check_admin(client, message.chat.id, message.from_user.id): return
-    if not message.reply_to_message: return await message.reply("<b>Reply to a user!</b>")
-    try:
-        await client.ban_chat_member(message.chat.id, message.reply_to_message.from_user.id)
-        await message.reply(f"<b>🚫 Bᴀɴɴᴇᴅ:</b> {message.reply_to_message.from_user.mention}")
-    except Exception as e: await message.reply(f"Error: {e}")
-
-@Client.on_message(filters.command('mute') & filters.group)
-async def mute_chat_user(client, message):
-    if not await is_check_admin(client, message.chat.id, message.from_user.id): return
-    if not message.reply_to_message: return await message.reply("<b>Reply to a user!</b>")
-    try:
-        await client.restrict_chat_member(message.chat.id, message.reply_to_message.from_user.id, ChatPermissions())
-        await message.reply(f"<b>🔇 Mᴜᴛᴇᴅ:</b> {message.reply_to_message.from_user.mention}")
-    except Exception as e: await message.reply(f"Error: {e}")
-
-@Client.on_message(filters.command(['unban', 'unmute']) & filters.group)
-async def unban_chat_user(client, message):
-    if not await is_check_admin(client, message.chat.id, message.from_user.id): return
-    if not message.reply_to_message: return await message.reply("<b>Reply to a user!</b>")
-    try:
-        await client.unban_chat_member(message.chat.id, message.reply_to_message.from_user.id)
-        await message.reply(f"<b>🔊 Uɴʙᴀɴɴᴇᴅ:</b> {message.reply_to_message.from_user.mention}")
-    except Exception as e: await message.reply(f"Error: {e}")
-
-@Client.on_message(filters.command('leave') & filters.user(ADMINS))
-async def leave_a_chat(bot, message):
-    if len(message.command) == 1: return await message.reply('Usage: /leave chat_id')
-    try: 
-        chat_id_arg = int(message.command[1])
-        await bot.send_message(chat_id=chat_id_arg, text='<b>👋 Bʏᴇ! Mᴀɪɴᴛᴇɴᴀɴᴄᴇ Mᴏᴅᴇ.</b>')
-        await bot.leave_chat(chat_id_arg)
-        await message.reply(f"<b>✅ Lᴇғᴛ Cʜᴀᴛ:</b> `{chat_id_arg}`")
-    except Exception as e: await message.reply(f'Error: {e}')
-
-@Client.on_callback_query(filters.regex(r'^confirm_pay'))
-async def confirm_payment_handler(client, query):
-    if query.from_user.id not in ADMINS: return await query.answer("Not Authorized", show_alert=True)
-    _, user_id, days = query.data.split("#")
-    user_id = int(user_id); days = int(days)
-    
-    ask_msg = await client.send_message(query.message.chat.id, f"<b>⚠️ Cᴏɴғɪʀᴍ Aᴄᴛɪᴠᴀᴛɪᴏɴ</b>\nUser: `{user_id}`\nDays: {days}\n\n<b>Send days to activate or /cancel</b>")
-    try:
-        msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id, timeout=60)
-        if msg.text == "/cancel":
-            await ask_msg.delete(); await msg.delete()
-            return await query.message.reply("❌ Cancelled.")
-        final_days = int(msg.text)
-        
-        mp = await db.get_plan(user_id)
-        ex = datetime.now(timezone.utc) + timedelta(days=final_days)
-        mp['expire'] = ex
-        mp['plan'] = f'{final_days} days'
-        mp['premium'] = True
-        await db.update_plan(user_id, mp)
-        
-        user_info = await client.get_users(user_id)
-        
-        await client.send_message(
-            LOG_CHANNEL, 
-            f"<b>🧾 Pᴀʏᴍᴇɴᴛ Vᴇʀɪғɪᴇᴅ</b>\n\n👤 <b>Usᴇʀ:</b> {user_info.mention} (`{user_id}`)\n🗓 <b>Pʟᴀɴ:</b> {final_days} Days\n⏰ <b>Exᴘɪʀᴇs:</b> {ex.strftime(TIME_FMT)}\n👮‍♂️ <b>Aᴘᴘʀᴏᴠᴇᴅ Bʏ:</b> {query.from_user.mention}"
-        )
-        
-        try: await ask_msg.delete(); await msg.delete()
-        except: pass
-        
-        await client.send_message(query.message.chat.id, f"<b>✅ Pʀᴇᴍɪᴜᴍ Aᴄᴛɪᴠᴀᴛᴇᴅ!</b>\nUser: {user_id}\nDays: {final_days}")
-        await query.message.edit_reply_markup(reply_markup=None)
-        try: await client.send_message(user_id, f"<b>🥳 Pᴀʏᴍᴇɴᴛ Aᴄᴄᴇᴘᴛᴇᴅ!</b>\n\nYour Premium plan for <b>{final_days} Days</b> has been activated.\n<i>Thanks for supporting us!</i> ❤️")
-        except: pass
-    except: await query.message.reply("❌ Error.")
