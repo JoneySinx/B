@@ -1,3 +1,4 @@
+
 import os
 import random
 import asyncio
@@ -11,7 +12,7 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPerm
 from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait
 
 from Script import script
-# Updated imports for new DB functions
+# 🔥 UPDATED IMPORTS FOR DUAL DB
 from database.ia_filterdb import db_count_documents, delete_files, save_file, get_file_details
 from database.users_chats_db import db
 from info import (
@@ -277,18 +278,18 @@ async def index_process_start(bot, query):
         f"<i>Please wait while I fetch messages...</i>"
     )
     
+    # Run in background
+    asyncio.create_task(index_files_to_db(bot, query.message, channel_id, target_db))
+
+
+# --- 🔄 INDEXING BACKGROUND TASK ---
+async def index_files_to_db(client, message, chat_id, target_db):
     total_files = 0
     duplicate = 0
     errors = 0
     deleted = 0
     no_media = 0
     
-    # Run in background
-    asyncio.create_task(index_files_to_db(bot, query.message, channel_id, target_db, total_files, duplicate, errors, deleted, no_media))
-
-
-# --- 🔄 INDEXING BACKGROUND TASK ---
-async def index_files_to_db(client, message, chat_id, target_db, total_files, duplicate, errors, deleted, no_media):
     try:
         msg = await message.reply("<b>📥 Initializing Indexing...</b>")
         
@@ -344,29 +345,43 @@ async def delete_all_index(bot, message):
     btn = [[InlineKeyboardButton("🗑️ DESTROY ALL", callback_data="delete_all")],[InlineKeyboardButton("❌ CANCEL", callback_data="close_data")]]
     await message.reply_text("<b>⚠️ Dᴀɴɢᴇʀ Zᴏɴᴇ</b>\n\nThis will delete <b>ALL FILES</b> from the database.\n<i>This action cannot be undone.</i>", reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
+# --- 📊 STATS COMMAND (UPDATED FOR DUAL DB BREAKDOWN) ---
 @Client.on_message(filters.command('stats'))
 async def stats(bot, message):
     if message.from_user.id not in ADMINS: return await message.delete()
     
-    files = await db_count_documents()
+    # 1. Fetch File Counts (Pri, Bak, Total)
+    pri, bak, total_files = await db_count_documents()
+    
+    # 2. Fetch Other Stats
     users = await db.total_users_count()
     chats = await db.total_chat_count()
     prm = await db.get_premium_count()
+    
+    # 3. DB Size
     used_bytes, free_bytes = await db.get_db_size()
     used = get_size(used_bytes)
     free = get_size(free_bytes)
-    uptime = get_readable_time(time_now() - temp.START_TIME)
     
-    text = (
-        f"<b>📊 <u>Sʏsᴛᴇᴍ Sᴛᴀᴛɪsᴛɪᴄs</u></b>\n\n"
-        f"<b>📂 Tᴏᴛᴀʟ Fɪʟᴇs:</b> {files}\n"
-        f"<b>👥 Usᴇʀs:</b> {users}\n"
-        f"<b>🏘️ Gʀᴏᴜᴘs:</b> {chats}\n"
-        f"<b>💎 Pʀᴇᴍɪᴜᴍ:</b> {prm}\n\n"
-        f"<b>💾 Dᴀᴛᴀʙᴀsᴇ:</b> {used} / {free}\n"
-        f"<b>⚡ Uᴘᴛɪᴍᴇ:</b> {uptime}"
+    # 4. Uptime & Config
+    uptime = get_readable_time(time_now() - temp.START_TIME)
+    conf = await db.get_config()
+    mode = conf.get('search_mode', 'hybrid').upper()
+    
+    # 🔥 Pass 3 Separate Values for Files to Status Text
+    text = script.STATUS_TXT.format(
+        pri,           # {} Primary
+        bak,           # {} Backup
+        total_files,   # {} Total
+        users,         # {} Users
+        chats,         # {} Groups
+        prm,           # {} Premium
+        used,          # {} Storage Used
+        free,          # {} Storage Free
+        mode,          # {} Mode
+        uptime         # {} Uptime
     )
-    await message.reply_text(text)    
+    await message.reply_text(text)
 
 @Client.on_message(filters.command('link'))
 async def link(bot, message):
