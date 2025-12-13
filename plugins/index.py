@@ -6,6 +6,7 @@ import logging
 from hydrogram import Client, filters, enums
 from hydrogram.errors import FloodWait, MessageNotModified
 from info import ADMINS
+# 🔥 IMPORT UPDATED save_file
 from database.ia_filterdb import save_file
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from utils import temp, get_readable_time
@@ -15,11 +16,8 @@ lock = asyncio.Lock()
 
 # --- 🎨 PROGRESS BAR (RETRO SQUARES) ---
 def get_progress_bar_string(current, total):
-    # Retro Square Design
     filled_symbol = "■"
     empty_symbol = "□"
-    
-    # 10 Blocks Logic
     completed = int(current * 10 / total)
     remainder = 10 - completed
     return filled_symbol * completed + empty_symbol * remainder
@@ -29,44 +27,43 @@ async def iter_messages(bot, chat_id, limit, offset):
     current = offset
     while current < limit:
         new_diff = min(200, limit - current)
-        if new_diff <= 0:
-            return
-        
+        if new_diff <= 0: return
         batch_ids = list(range(current, current + new_diff + 1))
-        
         try:
             messages = await bot.get_messages(chat_id, batch_ids)
             for message in messages:
-                if message:
-                    yield message
-                    
+                if message: yield message
         except FloodWait as e:
             await asyncio.sleep(e.value)
             continue
         except Exception as e:
             logger.error(f"Error fetching batch {current}: {e}")
             pass
-            
         current += 200
 
-# --- CALLBACK HANDLER ---
+# --- CALLBACK HANDLER (UPDATED FOR DUAL DB) ---
 @Client.on_callback_query(filters.regex(r'^index'))
 async def index_files(bot, query):
-    _, ident, chat, lst_msg_id, skip = query.data.split("#")
-    
+    # Data Format: index#action#target_db#chat_id#last_msg_id#skip
+    data = query.data.split("#")
+    action = data[1]
+
     if query.from_user.id not in ADMINS:
          return await query.answer("🛑 Access Denied! Admins Only.", show_alert=True)
          
-    if ident == 'yes':
+    if action == 'start':
+        target_db = data[2] # primary / backup
+        chat = int(data[3])
+        lst_msg_id = int(data[4])
+        skip = int(data[5])
+
         msg = query.message
-        await msg.edit("<b>🎛️ Iɴɪᴛɪᴀʟɪᴢɪɴɢ Iɴᴅᴇx Eɴɢɪɴᴇ...</b>")
-        try:
-            chat = int(chat)
-        except ValueError:
-            pass
-        await index_files_to_db(int(lst_msg_id), chat, msg, bot, int(skip))
+        await msg.edit(f"<b>🎛️ Iɴᴛɪᴀʟɪᴢɪɴɢ Iɴᴅᴇx Eɴɢɪɴᴇ ({target_db.upper()})...</b>")
+        
+        # Start Indexing with Target DB
+        await index_files_to_db(lst_msg_id, chat, msg, bot, skip, target_db)
     
-    elif ident == 'cancel':
+    elif action == 'cancel':
         temp.CANCEL = True
         await query.message.edit("<b>🛑 Sᴛᴏᴘᴘɪɴɢ Pʀᴏᴄᴇss... Pʟᴇᴀsᴇ Wᴀɪᴛ.</b>")
 
@@ -80,6 +77,7 @@ async def send_for_index(bot, message):
     chat_id = None
     last_msg_id = None
     
+    # 1. Parsing Logic
     if msg.text and msg.text.startswith("https://t.me"):
         try:
             msg_link = msg.text.split("/")
@@ -107,6 +105,7 @@ async def send_for_index(bot, message):
     if chat.type != enums.ChatType.CHANNEL:
         return await message.reply("<b>❌ I can only index Channels.</b>")
 
+    # 2. Skip Input
     s = await message.reply("<b>🔢 Send Skip Count (Start Message ID):</b>\n<i>(Send 0 to start from beginning)</i>")
     try:
         msg_skip = await bot.listen(chat_id=message.chat.id, user_id=message.from_user.id, timeout=30) 
@@ -116,8 +115,12 @@ async def send_for_index(bot, message):
         await s.delete()
         return await message.reply("<b>❌ Invalid Input or Timeout.</b>")
         
+    # 3. 🔥 DUAL DB BUTTONS (The Change)
     buttons = [
-        [InlineKeyboardButton('🚀 START INDEXING', callback_data=f'index#yes#{chat_id}#{last_msg_id}#{skip}')],
+        [
+            InlineKeyboardButton('🚀 Primary DB', callback_data=f'index#start#primary#{chat_id}#{last_msg_id}#{skip}'),
+            InlineKeyboardButton('🗄️ Backup DB', callback_data=f'index#start#backup#{chat_id}#{last_msg_id}#{skip}')
+        ],
         [InlineKeyboardButton('❌ CANCEL', callback_data='close_data')]
     ]
     reply_markup = InlineKeyboardMarkup(buttons)
@@ -127,13 +130,13 @@ async def send_for_index(bot, message):
         f"<b>📢 Cʜᴀɴɴᴇʟ:</b> {chat.title}\n"
         f"<b>🔢 Tᴏᴛᴀʟ Mᴇssᴀɢᴇs:</b> <code>{last_msg_id}</code>\n"
         f"<b>⏭️ Sᴋɪᴘ Uɴᴛɪʟ:</b> <code>{skip}</code>\n\n"
-        f"<i>Ready to launch?</i>",
+        f"<i>Select target database to start:</i>",
         reply_markup=reply_markup,
         parse_mode=enums.ParseMode.HTML
     )
 
 # --- INDEXING CORE LOGIC ---
-async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
+async def index_files_to_db(lst_msg_id, chat, msg, bot, skip, target_db):
     start_time = time.time()
     total_files = 0
     duplicate = 0
@@ -155,6 +158,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                     time_taken = get_readable_time(time.time()-start_time)
                     await msg.edit_text(
                         f"<b>🛑 Iɴᴅᴇxɪɴɢ Aʙᴏʀᴛᴇᴅ!</b>\n\n"
+                        f"<b>🎯 Tᴀʀɢᴇᴛ:</b> {target_db.upper()}\n"
                         f"<b>⏱️ Rᴜɴᴛɪᴍᴇ:</b> {time_taken}\n"
                         f"<b>⚡ Sᴀᴠᴇᴅ:</b> <code>{total_files}</code>",
                         parse_mode=enums.ParseMode.HTML
@@ -163,7 +167,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                     
                 current += 1
                 
-                # --- PROGRESS UPDATE (Every 200 msgs) ---
+                # --- PROGRESS UPDATE ---
                 if current % 200 == 0:
                     now = time.time()
                     diff = now - start_time
@@ -171,17 +175,16 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                     remaining_msgs = lst_msg_id - current
                     eta = get_readable_time(remaining_msgs / speed)
                     
-                    # Calculation
                     percentage = (current - skip) * 100 / total_to_process
                     prog_bar = get_progress_bar_string(current - skip, total_to_process)
                     
-                    btn = [[InlineKeyboardButton('⛔ STOP OPERATION', callback_data=f'index#cancel#{chat}#{lst_msg_id}#{skip}')]]
+                    # Button to Stop
+                    btn = [[InlineKeyboardButton('⛔ STOP OPERATION', callback_data=f'index#cancel#{target_db}#{chat}#{lst_msg_id}#{skip}')]]
                     
                     try:
-                        # UI: Retro Square Bar + ⚡ Saved
                         await msg.edit_text(
                             text=(
-                                f"<b>🔄 Pʀᴏᴄᴇssɪɴɢ Bᴀᴛᴄʜ...</b>\n\n"
+                                f"<b>🔄 Pʀᴏᴄᴇssɪɴɢ ({target_db.upper()})...</b>\n\n"
                                 f"{prog_bar} <b>{percentage:.2f}%</b>\n\n"
                                 f"<b>📂 Sᴄᴀɴɴᴇᴅ:</b> <code>{current}/{lst_msg_id}</code>\n"
                                 f"<b>⚡ Sᴀᴠᴇᴅ:</b> <code>{total_files}</code>\n"
@@ -216,7 +219,8 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
                 media.file_type = message.media.value
                 media.caption = message.caption
                 
-                sts = await save_file(media) 
+                # 🔥 PASS TARGET DB TO SAVE_FILE
+                sts = await save_file(media, target_db=target_db) 
                 
                 if sts == 'suc':
                     total_files += 1
@@ -233,6 +237,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip):
             time_taken = get_readable_time(time.time()-start_time)
             await msg.edit_text(
                 f"<b>✅ Oᴘᴇʀᴀᴛɪᴏɴ Sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
+                f"<b>🎯 Tᴀʀɢᴇᴛ DB:</b> {target_db.upper()}\n"
                 f"<b>⏱️ Tᴏᴛᴀʟ Tɪᴍᴇ:</b> <code>{time_taken}</code>\n"
                 f"<b>📊 Tᴏᴛᴀʟ Sᴄᴀɴɴᴇᴅ:</b> <code>{current - skip}</code>\n"
                 f"<b>⚡ Tᴏᴛᴀʟ Sᴀᴠᴇᴅ:</b> <code>{total_files}</code>\n"
