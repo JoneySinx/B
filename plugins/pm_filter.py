@@ -13,7 +13,7 @@ from info import (
     ADMINS, MAX_BTN, BIN_CHANNEL, IS_STREAM, DELETE_TIME, 
     FILMS_LINK, LOG_CHANNEL, SUPPORT_GROUP, UPDATES_LINK, QUALITY
 )
-from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, InputMediaPhoto
+from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from hydrogram import Client, filters, enums
 from utils import (
     is_premium, get_size, is_subscribed, is_check_admin, get_wish, 
@@ -37,7 +37,7 @@ EXT_PATTERN = re.compile(r"\b(mkv|mp4|avi|m4v|webm|flv|mov|wmv|3gp|mpg|mpeg)\b",
 async def pm_search(client, message):
     if message.text.startswith("/"): return
     
-    # 1. Maintenance Check
+    # 1. Maintenance Check (Admin Panel Feature)
     conf = await db.get_config()
     if conf.get('is_maintenance') and message.from_user.id not in ADMINS:
         return await message.reply("<b>🛠️ Bot is under Maintenance. Please wait.</b>")
@@ -125,6 +125,7 @@ async def next_page(bot, query):
         await query.answer(f"❌ Sᴇssɪᴏɴ Exᴘɪʀᴇᴅ. Sᴇᴀʀᴄʜ Aɢᴀɪɴ!", show_alert=True)
         return
 
+    # 🔥 FETCH SEARCH MODE FROM DB
     conf = await db.get_config()
     mode = conf.get('search_mode', 'hybrid')
 
@@ -178,6 +179,7 @@ async def auto_filter(client, msg, s, spoll=False):
     settings = await get_settings(message.chat.id)
     search = re.sub(r"\s+", " ", re.sub(r"[-:\"';!]", " ", message.text)).strip()
     
+    # 🔥 FETCH SEARCH MODE FROM DB
     conf = await db.get_config()
     mode = conf.get('search_mode', 'hybrid')
     
@@ -293,17 +295,20 @@ async def quality_search(client: Client, query: CallbackQuery):
     cap = f"<b>✨ <u>Fɪʟᴛᴇʀᴇᴅ Rᴇsᴜʟᴛs</u></b>\n\n<b>🔍 Qᴜᴇʀʏ:</b> <i>{search}</i> ({qual.upper()})\n<b>📂 Tᴏᴛᴀʟ:</b> {total}\n{files_link}"
     await query.message.edit_text(cap, reply_markup=InlineKeyboardMarkup(btn), parse_mode=enums.ParseMode.HTML)
 
-# --- 🎛️ MAIN CALLBACK HANDLER (COMPLETE) ---
+# --- 🎛️ MAIN CALLBACK HANDLER (ADMIN PANEL & MORE) ---
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     if not query.message:
         return await query.answer("⚠️ Message not found (too old).", show_alert=True)
 
-    # --- 1. ADMIN PANEL HANDLERS (NEW) ---
+    # ===============================
+    # 🛠️ ADMIN PANEL CALLBACKS (NEW)
+    # ===============================
     if query.data.startswith("admin_"):
         if query.from_user.id not in ADMINS:
-            return await query.answer("🚫 Access Denied", show_alert=True)
-            
+            return await query.answer("🚫 Access Denied! Admins Only.", show_alert=True)
+
+        # 1. Database Manager
         if query.data == "admin_db_menu":
             conf = await db.get_config()
             curr = conf.get('search_mode', 'hybrid').upper()
@@ -313,19 +318,60 @@ async def cb_handler(client: Client, query: CallbackQuery):
                 [InlineKeyboardButton(f"{'✅' if curr=='HYBRID' else ''} Hybrid (Both)", callback_data="set_db_mode#hybrid")],
                 [InlineKeyboardButton("🔙 Back", callback_data="back_to_admin")]
             ]
-            await query.message.edit(f"<b>🗄️ Database Search Mode</b>\nCurrently: <b>{curr}</b>", reply_markup=InlineKeyboardMarkup(btn))
+            await query.message.edit(f"<b>🗄️ Database Search Mode</b>\n\nCurrent Mode: <b>{curr}</b>", reply_markup=InlineKeyboardMarkup(btn))
+
+        # 2. Channel Manager
+        elif query.data == "admin_channel_menu":
+            conf = await db.get_config()
+            auth = conf.get('auth_channel', 'None')
+            log = conf.get('req_channel', 'None')
             
-        elif query.data == "back_to_admin":
-            # Re-show admin panel (Simplified view)
-            buttons = [
-                [InlineKeyboardButton("🗄️ Database Manager", callback_data="admin_db_menu"),
-                 InlineKeyboardButton("📺 Channel Config", callback_data="admin_channel_menu")],
-                [InlineKeyboardButton("🔗 Shortner Settings", callback_data="admin_shortner_menu"),
-                 InlineKeyboardButton("🤖 Clone Bot Manager", callback_data="admin_clone_menu")],
-                [InlineKeyboardButton("❌ Close", callback_data="close_data")]
+            btn = [
+                [InlineKeyboardButton("📢 Set Auth Channel", callback_data="set_channel#auth"),
+                 InlineKeyboardButton("📝 Set Log Channel", callback_data="set_channel#log")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_admin")]
             ]
-            await query.message.edit("<b>⚙️ Advanced Bot Control Panel</b>", reply_markup=InlineKeyboardMarkup(buttons))
+            await query.message.edit(f"<b>📺 Channel Configuration</b>\n\n<b>🔐 Auth Channel:</b> `{auth}`\n<b>📜 Log Channel:</b> `{log}`", reply_markup=InlineKeyboardMarkup(btn))
+
+        # 3. Shortner Manager
+        elif query.data == "admin_shortner_menu":
+            conf = await db.get_config()
+            status = "🟢 ON" if conf.get('shortlink_enable') else "🔴 OFF"
+            api = conf.get('shortlink_api', 'Not Set')
+            site = conf.get('shortlink_site', 'Not Set')
             
+            btn = [
+                [InlineKeyboardButton(f"Toggle Status: {status}", callback_data="toggle_shortner")],
+                [InlineKeyboardButton("✏️ Set API", callback_data="set_short#api"),
+                 InlineKeyboardButton("✏️ Set Domain", callback_data="set_short#site")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_admin")]
+            ]
+            await query.message.edit(f"<b>🔗 Shortlink Settings</b>\n\n<b>Status:</b> {status}\n<b>Site:</b> `{site}`\n<b>API:</b> `{api}`", reply_markup=InlineKeyboardMarkup(btn))
+
+        # 4. Clone Manager (Placeholder)
+        elif query.data == "admin_clone_menu":
+             # We will implement engine logic later, this is just a switch
+             conf = await db.get_config()
+             cl_status = "🟢 Enabled" if not conf.get('disable_clone') else "🔴 Disabled"
+             btn = [
+                 [InlineKeyboardButton(f"Clone Maker: {cl_status}", callback_data="toggle_clone_status")],
+                 [InlineKeyboardButton("🔙 Back", callback_data="back_to_admin")]
+             ]
+             await query.message.edit("<b>🤖 Clone Bot Manager</b>\n\nEnable or Disable the ability for users to create clones.", reply_markup=InlineKeyboardMarkup(btn))
+
+    # --- SETTING LOGIC (LISTENERS) ---
+    elif query.data == "back_to_admin":
+        await admin_panel(client, query.message) # Re-use the function from commands.py via import or just simple edit
+        # Since admin_panel is a command handler, we recreate the UI here:
+        buttons = [
+            [InlineKeyboardButton("🗄️ Database Manager", callback_data="admin_db_menu"),
+             InlineKeyboardButton("📺 Channel Config", callback_data="admin_channel_menu")],
+            [InlineKeyboardButton("🔗 Shortner Settings", callback_data="admin_shortner_menu"),
+             InlineKeyboardButton("🤖 Clone Bot Manager", callback_data="admin_clone_menu")],
+            [InlineKeyboardButton("❌ Close", callback_data="close_data")]
+        ]
+        await query.message.edit("<b>⚙️ Advanced Bot Control Panel</b>", reply_markup=InlineKeyboardMarkup(buttons))
+
     elif query.data.startswith("set_db_mode#"):
         mode = query.data.split("#")[1]
         await db.update_config('search_mode', mode)
@@ -333,7 +379,51 @@ async def cb_handler(client: Client, query: CallbackQuery):
         # Refresh Menu
         await cb_handler(client, type('obj', (object,), {'data': 'admin_db_menu', 'message': query.message, 'from_user': query.from_user, 'answer': query.answer}))
 
-    # --- 2. EXISTING CALLBACKS (RESTORED) ---
+    elif query.data.startswith("set_channel#"):
+        target = query.data.split("#")[1] # auth or log
+        await query.message.edit(f"<b>📝 Send the new {target.upper()} Channel ID:</b>\n\n(Make sure I am admin there!)")
+        try:
+            msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id, timeout=60)
+            chat_id = int(msg.text)
+            # Verify Access
+            try:
+                chat = await client.get_chat(chat_id)
+                await db.update_config(f"{target}_channel" if target == 'auth' else 'req_channel', chat_id)
+                await query.message.edit(f"<b>✅ {target.title()} Channel Set:</b> {chat.title}")
+            except Exception as e:
+                await query.message.edit(f"<b>❌ Error:</b> Could not access channel.\n`{e}`")
+        except ListenerTimeout:
+            await query.message.edit("<b>⏳ Timeout!</b> Settings not changed.")
+        except Exception:
+            await query.message.edit("<b>❌ Invalid Input!</b> Send a valid Channel ID.")
+
+    elif query.data == "toggle_shortner":
+        conf = await db.get_config()
+        curr = conf.get('shortlink_enable', False)
+        await db.update_config('shortlink_enable', not curr)
+        await cb_handler(client, type('obj', (object,), {'data': 'admin_shortner_menu', 'message': query.message, 'from_user': query.from_user, 'answer': query.answer}))
+
+    elif query.data.startswith("set_short#"):
+        target = query.data.split("#")[1] # api or site
+        await query.message.edit(f"<b>✏️ Send the new Shortlink {target.upper()}:</b>")
+        try:
+            msg = await client.listen(chat_id=query.message.chat.id, user_id=query.from_user.id, timeout=60)
+            val = msg.text.strip()
+            await db.update_config(f"shortlink_{target}", val)
+            await query.message.edit(f"<b>✅ Shortlink {target.upper()} Updated!</b>")
+        except:
+             await query.message.edit("<b>⏳ Timeout or Invalid Input!</b>")
+
+    elif query.data == "toggle_clone_status":
+        conf = await db.get_config()
+        curr = conf.get('disable_clone', False)
+        await db.update_config('disable_clone', not curr)
+        await query.answer("✅ Status Updated", show_alert=True)
+        await cb_handler(client, type('obj', (object,), {'data': 'admin_clone_menu', 'message': query.message, 'from_user': query.from_user, 'answer': query.answer}))
+
+    # ===============================
+    # 👤 EXISTING USER CALLBACKS
+    # ===============================
     elif query.data.startswith("close_data"):
         await query.message.delete()
         try: await query.message.reply_to_message.delete()
@@ -376,22 +466,25 @@ async def cb_handler(client: Client, query: CallbackQuery):
         caption = f"<b>💳 Pay ₹{amount}</b>\nScan QR to pay."
         await query.message.reply_photo(qr_path, caption=caption)
         os.remove(qr_path)
-        # Payment verification logic truncated for brevity, standard flow applies
 
     elif query.data == "start":
-        buttons = [[InlineKeyboardButton('👨‍🚒 Help', callback_data='help'), InlineKeyboardButton('📚 Status 📊', callback_data='stats')]]
+        buttons = [[InlineKeyboardButton('👨‍🚒 Help', callback_data='help'), InlineKeyboardButton('📊 Sᴛᴀᴛs', callback_data='stats')]]
         try: await query.message.edit_text(script.START_TXT.format(query.from_user.mention, get_wish()), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
         except MessageNotModified: pass
 
     elif query.data == "help":
-        buttons = [[InlineKeyboardButton('🙋🏻‍♀️ User', callback_data='user_command'), InlineKeyboardButton('🦹 Admin', callback_data='admin_command')],[InlineKeyboardButton('🏄 Back', callback_data='start')]]
+        buttons = [[InlineKeyboardButton('🙋🏻‍♀️ User', callback_data='user_command'), InlineKeyboardButton('🤖 Clone', callback_data='clone_help'), InlineKeyboardButton('🦹 Admin', callback_data='admin_command')],[InlineKeyboardButton('🏄 Back', callback_data='start')]]
         try: await query.message.edit_text(script.HELP_TXT.format(query.from_user.mention), reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
         except MessageNotModified: pass
 
     elif query.data == "user_command":
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='help')]]
         await query.message.edit_text(script.USER_COMMAND_TXT, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
-        
+    
+    elif query.data == "clone_help":
+        buttons = [[InlineKeyboardButton('🏄 Back', callback_data='help')]]
+        await query.message.edit_text(script.CLONE_TXT, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+
     elif query.data == "admin_command":
         if query.from_user.id not in ADMINS: return await query.answer("🛑 ADMINS Only!", show_alert=True)
         buttons = [[InlineKeyboardButton('🏄 Back', callback_data='help')]]
@@ -399,8 +492,8 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif query.data == "stats":
         if query.from_user.id not in ADMINS: return await query.answer("🛑 ADMINS Only!", show_alert=True)
-        files = await db_count_documents()
-        await query.message.edit_text(f"Total Files: {files}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data='start')]]))
+        pri, bak, tot = await db_count_documents()
+        await query.message.edit_text(f"<b>📊 Quick Stats</b>\n\nPri: {pri}\nBak: {bak}\nTot: {tot}", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('Back', callback_data='start')]]))
 
     elif query.data.startswith("bool_setgs"):
         ident, set_type, status, grp_id = query.data.split("#")
