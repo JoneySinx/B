@@ -10,7 +10,6 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPerm
 from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait
 
 from Script import script
-# 🔥 UPDATED IMPORTS (DUAL DB & ANALYTICS)
 from database.ia_filterdb import db_count_documents, delete_files, get_file_details
 from database.users_chats_db import db
 from info import (
@@ -21,7 +20,7 @@ from info import (
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
     is_check_admin, get_verify_status, update_verify_status, 
-    get_readable_time, get_wish, temp, save_group_settings
+    get_readable_time, get_wish, temp, save_group_settings, check_verification, get_verify_short_link
 )
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,11 @@ async def get_grp_stg(group_id):
 # ==============================================================================
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
-    # 1. GROUP HANDLING
+    # 1. BAN CHECK (First Line of Defense)
+    if message.from_user.id in temp.BANNED_USERS:
+        return await message.reply("<b>🚫 You are BANNED from using this bot!</b>")
+
+    # 2. GROUP HANDLING
     if message.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP]:
         if not await db.get_chat(message.chat.id):
             total = await client.get_chat_members_count(message.chat.id)
@@ -70,34 +73,36 @@ async def start(client, message):
 
     if not message.from_user: return
 
-    # 2. USER REGISTRATION
+    # 3. MAINTENANCE CHECK
+    conf = await db.get_config()
+    if conf.get('is_maintenance') and message.from_user.id not in ADMINS:
+        reason = conf.get('maintenance_reason', "Updating Server...")
+        return await message.reply(f"<b>🚧 BOT UNDER MAINTENANCE 🚧</b>\n\n<i>Reason: {reason}</i>")
+
+    # 4. USER REGISTRATION
     if not await db.is_user_exist(message.from_user.id):
         await db.add_user(message.from_user.id, message.from_user.first_name)
         await client.send_message(LOG_CHANNEL, script.NEW_USER_TXT.format(message.from_user.mention, message.from_user.id))
 
-    # 🔥 3. VERIFY TOKEN HANDLER (NEW)
+    # 🔥 5. VERIFY TOKEN HANDLER (Process Verification)
     if len(message.command) == 2 and message.command[1].startswith("verify_"):
         token = message.command[1].split("_")[1]
         stored = await get_verify_status(message.from_user.id)
         
         if stored.get('token') == token:
             await update_verify_status(message.from_user.id, is_verified=True, verified_at=time.time())
-            await message.reply(f"<b>🎉 Verification Successful!</b>\n\n<i>You can now search files freely.</i>\n<i>Valid for: 24 Hours</i>")
+            await message.reply(f"<b>🎉 Verification Successful!</b>\n\n<i>You can now search files freely.</i>\n<i>Valid for: {int(conf.get('verify_duration', 86400)/3600)} Hours</i>")
             return
         else:
             return await message.reply("<b>❌ Invalid or Expired Token!</b>\nPlease generate a new link.")
 
-    # 4. NORMAL START
+    # 6. NORMAL START MESSAGE
     if (len(message.command) != 2) or (len(message.command) == 2 and message.command[1] == 'start'):
         # MOOD SYSTEM: Start Msg & Pic
-        conf = await db.get_config()
         start_msg = conf.get('tpl_start_msg', script.START_TXT)
-        
-        # Format
         try: txt = start_msg.format(message.from_user.mention, get_wish())
         except: txt = start_msg
         
-        # Custom Pic
         pics = conf.get('start_pics', PICS)
         if isinstance(pics, str): pics = [pics]
         
@@ -111,21 +116,39 @@ async def start(client, message):
     mc = message.command[1]
     if mc == 'premium': return await plan(client, message)
     
-    # 5. SETTINGS SHORTCUT
+    # 7. SETTINGS SHORTCUT
     if mc.startswith('settings'):
         _, group_id = message.command[1].split("_")
         if not await is_check_admin(client, int(group_id), message.from_user.id): return await message.reply("<b>❌ Access Denied! Admins Only.</b>")
         btn = await get_grp_stg(int(group_id))
         return await message.reply(f"<b>⚙️ Settings for:</b> <code>{group_id}</code>", reply_markup=InlineKeyboardMarkup(btn))
 
-    # 6. FORCE SUB CHECK
+    # 8. FORCE SUB CHECK
     btn = await is_subscribed(client, message)
     if btn:
         btn.append([InlineKeyboardButton("🔁 Try Again", callback_data=f"checksub#{mc}")])
         await message.reply_photo(photo=random.choice(PICS), caption=f"<b>👋 Hello {message.from_user.mention},</b>\n\n<i>Please Join My Channel to use me!</i>", reply_markup=InlineKeyboardMarkup(btn))
         return 
-        
-    # 7. FILE RETRIEVAL (ALL FILES)
+    
+    # 🔥 9. VERIFICATION CHECK (CRITICAL FIX FOR FILE LINKS)
+    # If user clicks file link, check verification status BEFORE serving file
+    if conf.get('is_verify', False) and not await is_premium(message.from_user.id, client):
+        is_verified = await check_verification(client, message.from_user.id)
+        if not is_verified:
+            # Redirect to Verification
+            import string
+            token = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
+            await update_verify_status(message.from_user.id, verify_token=token, is_verified=False)
+            verify_url = f"https://t.me/{temp.U_NAME}?start=verify_{token}"
+            short_link = await get_verify_short_link(verify_url)
+            
+            btn = [[InlineKeyboardButton("✅ Verify to Get File", url=short_link)]]
+            return await message.reply(
+                f"<b>🔐 Access Denied!</b>\n\n<i>You must verify yourself to access this file.</i>",
+                reply_markup=InlineKeyboardMarkup(btn)
+            )
+
+    # 10. FILE RETRIEVAL (ALL FILES)
     if mc.startswith('all'):
         try: _, grp_id, key = mc.split("_", 2)
         except ValueError: return await message.reply("❌ Invalid Link")
@@ -138,12 +161,9 @@ async def start(client, message):
         
         file_ids = [total_files.id]
         
-        # MOOD SYSTEM: Global Caption
-        conf = await db.get_config()
         GLOBAL_CAP = conf.get('global_caption')
 
         for file in files:
-            # Decide Caption (Group > Global > Default)
             if settings['caption']: CAPTION = settings['caption']
             elif GLOBAL_CAP: CAPTION = GLOBAL_CAP
             else: CAPTION = "{file_name}"
@@ -156,7 +176,6 @@ async def start(client, message):
             msg = await client.send_cached_media(chat_id=message.from_user.id, file_id=file['_id'], caption=f_caption, protect_content=conf.get('is_protect_content', False), reply_markup=InlineKeyboardMarkup(btn))
             file_ids.append(msg.id)
 
-        # Cleanup Logic
         del_time = conf.get('delete_time', DELETE_TIME)
         if settings['auto_delete']:
             msg = await message.reply(f"<b>⚠️ Files will be deleted in {get_readable_time(del_time)}!</b>")
@@ -167,7 +186,7 @@ async def start(client, message):
                 except: pass
         return
 
-    # 8. SINGLE FILE
+    # 11. SINGLE FILE
     try: type_, grp_id, file_id = mc.split("_", 2)
     except ValueError: return await message.reply("❌ Invalid Link")
     
@@ -175,9 +194,7 @@ async def start(client, message):
     if not files_: return await message.reply('<b>⚠️ File Not Found!</b>')
     
     settings = await get_settings(int(grp_id))
-    conf = await db.get_config()
     
-    # Caption Logic
     if settings['caption']: CAPTION = settings['caption']
     elif conf.get('global_caption'): CAPTION = conf.get('global_caption')
     else: CAPTION = "{file_name}"
@@ -215,14 +232,59 @@ async def admin_panel(client, message):
     buttons = [
         [InlineKeyboardButton("🗄️ Database", callback_data="admin_db_menu"), InlineKeyboardButton("📺 Channels", callback_data="admin_channel_menu")],
         [InlineKeyboardButton("💰 Payments", callback_data="admin_payment_menu"), InlineKeyboardButton("🔐 Verify Ads", callback_data="admin_verify_menu")],
-        [InlineKeyboardButton("🎭 Templates (Mood)", callback_data="admin_template_menu"), InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast_menu")],
+        [InlineKeyboardButton("🎭 Templates", callback_data="admin_template_menu"), InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast_menu")],
         [InlineKeyboardButton("🛡️ Bot Settings", callback_data="admin_bot_settings"), InlineKeyboardButton("🤖 Clone Manager", callback_data="admin_clone_menu")],
         [InlineKeyboardButton("❌ Close", callback_data="close_data")]
     ]
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 # ==============================================================================
-# 🗑️ SMART DELETE (INTERACTIVE)
+# 🛠️ DIRECT ADMIN UTILITY COMMANDS (NEW)
+# ==============================================================================
+
+@Client.on_message(filters.command("ban") & filters.user(ADMINS))
+async def ban_user_cmd(bot, message):
+    try:
+        user_id = int(message.command[1])
+        await db.add_banned_user(user_id) # Ensure this exists in users_chats_db
+        temp.BANNED_USERS.append(user_id)
+        await message.reply(f"<b>🚫 User {user_id} Banned!</b>")
+    except: await message.reply("Usage: `/ban [User ID]`")
+
+@Client.on_message(filters.command("unban") & filters.user(ADMINS))
+async def unban_user_cmd(bot, message):
+    try:
+        user_id = int(message.command[1])
+        await db.remove_banned_user(user_id)
+        if user_id in temp.BANNED_USERS: temp.BANNED_USERS.remove(user_id)
+        await message.reply(f"<b>✅ User {user_id} Unbanned!</b>")
+    except: await message.reply("Usage: `/unban [User ID]`")
+
+@Client.on_message(filters.command("users") & filters.user(ADMINS))
+async def total_users_cmd(bot, message):
+    count = await db.total_users_count()
+    await message.reply(f"<b>👥 Total Users:</b> {count}")
+
+@Client.on_message(filters.command("leave") & filters.user(ADMINS))
+async def leave_group_cmd(bot, message):
+    if len(message.command) != 2: return await message.reply("Usage: `/leave [Chat ID]`")
+    try:
+        chat_id = int(message.command[1])
+        await bot.leave_chat(chat_id)
+        await message.reply(f"<b>✅ Left Chat:</b> {chat_id}")
+    except Exception as e: await message.reply(f"Error: {e}")
+
+@Client.on_message(filters.command("broadcast") & filters.user(ADMINS))
+async def broadcast_cmd(bot, message):
+    if not message.reply_to_message:
+        return await message.reply("<b>⚠️ Reply to a message to broadcast!</b>")
+    
+    await message.reply("<b>🚀 Broadcasting...</b>")
+    from plugins.pm_filter import run_broadcast
+    asyncio.create_task(run_broadcast(bot, message.reply_to_message, message.from_user.id))
+
+# ==============================================================================
+# 🗑️ SMART DELETE
 # ==============================================================================
 @Client.on_message(filters.command('delete') & filters.user(ADMINS))
 async def delete_file_cmd(bot, message):
@@ -231,7 +293,6 @@ async def delete_file_cmd(bot, message):
     except: 
         return await message.reply_text("<b>⚠️ Usage:</b> `/delete [File Name]`")
         
-    # Interactive Buttons for Surgical Strike
     btn = [
         [
             InlineKeyboardButton("🗑️ Primary Only", callback_data=f"kill_file#primary#{query}"),
@@ -250,7 +311,7 @@ async def delete_file_cmd(bot, message):
     )
 
 # ==============================================================================
-# 📂 INDEXING (DUAL DB)
+# 📂 INDEXING
 # ==============================================================================
 @Client.on_message(filters.command("index") & filters.user(ADMINS))
 async def index_handler(client, message):
@@ -268,7 +329,7 @@ async def index_handler(client, message):
     await message.reply(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 # ==============================================================================
-# 🕵️ USER SPY & GOD COMMANDS
+# 🕵️ GOD COMMANDS
 # ==============================================================================
 @Client.on_message(filters.command("info") & filters.user(ADMINS))
 async def user_info(bot, message):
@@ -284,7 +345,6 @@ async def user_info(bot, message):
             f"<b>🕵️ USER INTELLIGENCE</b>\n\n"
             f"<b>Name:</b> {user.mention}\n"
             f"<b>ID:</b> <code>{user.id}</code>\n"
-            f"<b>DC:</b> {user.dc_id}\n"
             f"<b>In DB:</b> {db_u}\n"
             f"<b>Premium:</b> {prem}\n"
             f"<b>Verified:</b> {verify['is_verified']}"
@@ -316,7 +376,7 @@ async def purge_zombies(bot, message):
     await msg.edit(f"<b>✅ Purge Complete!</b>\nRemoved {deleted} Zombie Users.")
 
 # ==============================================================================
-# 📊 STATS (ADVANCED)
+# 📊 STATS
 # ==============================================================================
 @Client.on_message(filters.command('stats') & filters.user(ADMINS))
 async def stats(bot, message):
@@ -326,7 +386,6 @@ async def stats(bot, message):
     prm = await db.get_premium_count()
     used_bytes, free_bytes = await db.get_db_size()
     
-    # Analytics from new DB
     conf = await db.get_config()
     mode = conf.get('search_mode', 'hybrid').upper()
     
@@ -337,7 +396,7 @@ async def stats(bot, message):
     )
     await message.reply_text(text)
 
-# --- UTILITY COMMANDS ---
+# --- UTILITY COMMANDS (LINK/IMG/PLAN) ---
 @Client.on_message(filters.command('link'))
 async def link(bot, message):
     msg = message.reply_to_message
@@ -362,7 +421,6 @@ async def img_2_link(bot, message):
     os.remove(path)
     await message.reply(f"<b>✅ Image Uploaded:</b>\n<code>{url}</code>")
 
-# --- PREMIUM COMMANDS ---
 @Client.on_message(filters.command('plan') & filters.private)
 async def plan(client, message):
     btn = [[InlineKeyboardButton('💳 Bᴜʏ Pʀᴇᴍɪᴜᴍ Nᴏᴡ', callback_data='activate_plan')]]
@@ -401,6 +459,27 @@ async def rm_prm(bot, message):
     user = await bot.get_users(user_id)
     await db.update_plan(user.id, {'expire': None, 'premium': False})
     await message.reply("✅ Premium Removed.")
+
+@Client.on_message(filters.command('prm_list') & filters.user(ADMINS))
+async def prm_list(bot, message):
+    tx = await message.reply('<b>🔄 Fᴇᴛᴄʜɪɴɢ Dᴀᴛᴀ...</b>')
+    out = "<b>💎 <u>Pʀᴇᴍɪᴜᴍ Usᴇʀs Lɪsᴛ</u></b>\n\n"
+    count = 0
+    async for user in await db.get_premium_users():
+        if user['status']['premium']:
+            count += 1
+            try: u = await bot.get_users(user['id']); mention = u.mention
+            except: mention = "Unknown"
+            expiry = user['status']['expire']
+            exp_str = expiry.strftime("%d/%m/%Y") if isinstance(expiry, datetime) else "Unlimited"
+            out += f"<b>{count}.</b> {mention} (`{user['id']}`) | ⏳ {exp_str}\n"
+            
+    if count == 0: await tx.edit_text("<b>❌ No Premium Users.</b>")
+    else:
+        try: await tx.edit_text(out)
+        except MessageTooLong:
+            with open('premium_users.txt', 'w+') as f: f.write(out.replace('<b>', '').replace('</b>', '').replace('`', ''))
+            await message.reply_document('premium_users.txt', caption="💎 Premium Users List")
 
 @Client.on_message(filters.command('ping'))
 async def ping(client, message):
