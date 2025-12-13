@@ -13,7 +13,7 @@ from aiohttp import web
 from hydrogram import Client, idle, __version__ as hydro_ver
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Performance Booster
+# Performance Booster (Optional but Recommended)
 try:
     import uvloop
     uvloop.install()
@@ -32,6 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+# Reduce Noise
 logging.getLogger("hydrogram").setLevel(logging.ERROR)
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
 logging.getLogger("pymongo").setLevel(logging.ERROR)
