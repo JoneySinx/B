@@ -1,45 +1,116 @@
 {
-  "name": "Auto Filter Bot",
-  "description": "A Telegram bot for auto-filtering movies.",
-  "repository": "https://github.com/HA-Bots/Auto-Filter-Bot",
-  "keywords": ["telegram", "bot", "filter", "automation"],
+  "name": "Fast Finder Bot (God Mode)",
+  "description": "Ultra Advanced Auto Filter Bot with Dual Database, Clone System, Premium Payments & Web Streaming.",
+  "keywords": [
+    "telegram",
+    "bot",
+    "filter",
+    "automation",
+    "movies",
+    "series",
+    "premium",
+    "clone"
+  ],
+  "repository": "https://github.com/YourRepo/Auto-Filter-Bot",
   "buildpacks": [
     {
       "url": "heroku/python"
+    },
+    {
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest.git"
     }
   ],
   "env": {
-    "BOT_TOKEN": {
-      "description": "Create a bot using @BotFather, and get the Telegram API token.",
-      "required": true
-    },
     "API_ID": {
-      "description": "Get this value from telegram.org",
+      "description": "Get this value from my.telegram.org",
       "required": true
     },
     "API_HASH": {
-      "description": "Get this value from telegram.org",
+      "description": "Get this value from my.telegram.org",
+      "required": true
+    },
+    "BOT_TOKEN": {
+      "description": "Bot Token from @BotFather",
       "required": true
     },
     "ADMINS": {
-      "description": "ID of Admins. (Multiple admins separated by space)",
+      "description": "User IDs of Admins (Separated by space). Example: 123456 789012",
       "required": true
     },
-    "FILES_DATABASE_URL": {
-      "description": "MongoDB URL for 1st files database.",
+    "DATABASE_URI": {
+      "description": "Primary MongoDB Connection String (Main Database).",
       "required": true
     },
-    "DATA_DATABASE_URL": {
-      "description": "MongoDB URL for save user, group, etc data.",
-      "required": true
+    "BACKUP_DATABASE_URI": {
+      "description": "Secondary MongoDB Connection String (For Dual Save Mode). Leave empty if not needed.",
+      "required": false
+    },
+    "DATABASE_NAME": {
+      "description": "Name of your Database.",
+      "value": "FastFinder",
+      "required": false
     },
     "LOG_CHANNEL": {
-      "description": "A channel to log the activities of bot. Add channel ID and Make sure bot is admin.",
+      "description": "Channel ID for Bot Logs (Make bot admin). Starts with -100",
       "required": true
     },
-    "URL": {
-      "description": "Add your deployed bot app link or vps IP address.",
+    "BIN_CHANNEL": {
+      "description": "Channel ID for Storing Files (File Store). Starts with -100",
       "required": true
+    },
+    "AUTH_CHANNEL": {
+      "description": "Channel ID for Force Subscribe. Starts with -100. (Optional)",
+      "required": false
+    },
+    "URL": {
+      "description": "Your App URL (e.g., https://your-app-name.herokuapp.com/). Don't forget the trailing slash /",
+      "required": true
+    },
+    "IS_PREMIUM": {
+      "description": "Enable Premium/Payment System?",
+      "value": "True",
+      "required": false
+    },
+    "UPI_ID": {
+      "description": "Your UPI ID for Payments (e.g., username@okhdfcbank).",
+      "required": false
+    },
+    "UPI_NAME": {
+      "description": "Name to show on Payment Receipt.",
+      "value": "FastFinder Admin",
+      "required": false
+    },
+    "RECEIPT_SEND_USERNAME": {
+      "description": "Username where users will send payment screenshots (e.g., @AdminUser).",
+      "required": false
+    },
+    "IS_STREAM": {
+      "description": "Enable Stream/Download Links?",
+      "value": "True",
+      "required": false
+    },
+    "PROTECT_CONTENT": {
+      "description": "Prevent Forwarding/Saving from Bot?",
+      "value": "True",
+      "required": false
+    },
+    "DUAL_SAVE_MODE": {
+      "description": "Save files to both Primary and Backup DB?",
+      "value": "True",
+      "required": false
+    },
+    "DISABLE_CLONE": {
+      "description": "Disable users from creating Clone Bots?",
+      "value": "False",
+      "required": false
+    },
+    "SHORTLINK_API": {
+      "description": "Your Shortner API Key (For Ads/Money).",
+      "required": false
+    },
+    "SHORTLINK_URL": {
+      "description": "Your Shortner Domain (e.g., adlink.com).",
+      "required": false
     }
   }
 }
