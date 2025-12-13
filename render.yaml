@@ -1,9 +1,52 @@
 services:
-  - name: auto-filter-bot
-    type: web
-    env: python
-    # Ensure all required packages are installed
-    buildCommand: "pip install -r requirements.txt" 
-    # Starts your main application file
-    startCommand: "python bot.py" 
+  - type: web
+    name: fast-finder-god-mode
+    env: docker
     plan: free
+    
+    # 🐳 Docker Configuration
+    # यह Render को बताएगा कि हमारी God Mode Dockerfile इस्तेमाल करनी है
+    dockerContext: .
+    dockerfilePath: Dockerfile
+
+    # 🏥 Health Check (Optional)
+    # यह चेक करेगा कि बोट का वेब सर्वर जिंदा है या नहीं
+    healthCheckPath: /
+
+    # ⚙️ Environment Variables (Auto-Setup)
+    # Render डैशबोर्ड पर ये सब अपने आप आ जाएंगे, आपको बस वैल्यू डालनी होगी
+    envVars:
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMINS
+        sync: false
+      - key: LOG_CHANNEL
+        sync: false
+      - key: BIN_CHANNEL
+        sync: false
+      - key: DATABASE_URI
+        sync: false
+      - key: URL
+        sync: false
+      
+      # 👇 Optional / Advanced Vars
+      - key: BACKUP_DATABASE_URI
+        sync: false
+      - key: AUTH_CHANNEL
+        sync: false
+      - key: IS_PREMIUM
+        value: "True"
+      - key: IS_STREAM
+        value: "True"
+      - key: PROTECT_CONTENT
+        value: "True"
+      - key: DUAL_SAVE_MODE
+        value: "True"
+      - key: UPI_ID
+        sync: false
+      - key: RECEIPT_SEND_USERNAME
+        sync: false
