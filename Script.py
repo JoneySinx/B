@@ -1,7 +1,6 @@
 class script(object):
 
     # --- 👋 START MESSAGE ---
-    # Used in: commands.py (start)
     START_TXT = """<b>👋 Hᴇʟʟᴏ {}, {}!</b>
 
 I ᴀᴍ ᴀɴ ᴀᴅᴠᴀɴᴄᴇᴅ <b>Pʀᴇᴍɪᴜᴍ Aᴜᴛᴏ Fɪʟᴛᴇʀ Bᴏᴛ</b>. ⚡
@@ -9,32 +8,37 @@ I ᴄᴀɴ ᴘʀᴏᴠɪᴅᴇ ᴍᴏᴠɪᴇs, sᴇʀɪᴇs, ᴀɴᴅ ғɪʟᴇ
 
 ✨ <b><u>Mʏ Fᴇᴀᴛᴜʀᴇs:</u></b>
 🚀 <b>Fᴀsᴛ Sᴇᴀʀᴄʜ:</b> Get files in milliseconds.
+🗄️ <b>Dᴜᴀʟ Dᴀᴛᴀʙᴀsᴇ:</b> Separate Primary & Backup storage.
 🛡️ <b>Sᴇᴄᴜʀᴇ:</b> No Ads & Direct Links (Premium).
-🎥 <b>Sᴛʀᴇᴀᴍɪɴɢ:</b> Watch Online without downloading.
-📂 <b>Sᴍᴀʀᴛ Iɴᴅᴇx:</b> Auto-index channels support.
+🤖 <b>Cʟᴏɴᴇ:</b> Create your own copy of this bot.
+📂 <b>Sᴍᴀʀᴛ Iɴᴅᴇx:</b> Auto-routing for channels.
 
 <i>👇 Cʟɪᴄᴋ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ ᴛᴏ ᴋɴᴏᴡ ᴍᴏʀᴇ!</i>"""
 
     # --- 📊 STATUS DASHBOARD ---
-    # Used in: commands.py (stats)
+    # 3 Placeholders for File Counts (Primary, Backup, Total)
     STATUS_TXT = """<b>📊 <u>Sʏsᴛᴇᴍ Sᴛᴀᴛɪsᴛɪᴄs</u></b>
 
+<b>🥇 Pʀɪᴍᴀʀʏ DB:</b> <code>{}</code>
+<b>🥈 Bᴀᴄᴋᴜᴘ DB:</b> <code>{}</code>
 <b>📂 Tᴏᴛᴀʟ Fɪʟᴇs:</b> <code>{}</code>
+
 <b>👤 Tᴏᴛᴀʟ Usᴇʀs:</b> <code>{}</code>
 <b>🏘️ Tᴏᴛᴀʟ Gʀᴏᴜᴘs:</b> <code>{}</code>
 <b>💎 Pʀᴇᴍɪᴜᴍ Usᴇʀs:</b> <code>{}</code>
 
 <b>💾 Sᴛᴏʀᴀɢᴇ:</b> <code>{} / {}</code>
+<b>⚙️ Mᴏᴅᴇ:</b> <code>{}</code>
 <b>⚡ Uᴘᴛɪᴍᴇ:</b> <code>{}</code>"""
 
     # --- ⚙️ HELP MENU ---
-    # Used in: pm_filter.py (help callback)
     HELP_TXT = """<b>⚙️ <u>Hᴇʟᴘ Mᴇɴᴜ</u></b>
 
 Hᴇʀᴇ ʏᴏᴜ ᴄᴀɴ ғɪɴᴅ ᴀʟʟ ᴛʜᴇ ᴄᴏᴍᴍᴀɴᴅs ᴀɴᴅ ɪɴsᴛʀᴜᴄᴛɪᴏɴs ᴛᴏ ᴜsᴇ ᴍᴇ.
 
-👤 <b>Usᴇʀs:</b> Learn how to search & download.
-🦹 <b>Aᴅᴍɪɴs:</b> Learn how to manage groups & files.
+👤 <b>Usᴇʀs:</b> Search & Download Guide.
+🤖 <b>Cʟᴏɴᴇ:</b> How to make your own bot.
+🦹 <b>Aᴅᴍɪɴs:</b> Control Panel & Management.
 
 <i>👇 Cʜᴏᴏsᴇ ᴀ ᴄᴀᴛᴇɢᴏʀʏ ʙᴇʟᴏᴡ:</i>"""
 
@@ -46,48 +50,42 @@ Hᴇʀᴇ ʏᴏᴜ ᴄᴀɴ ғɪɴᴅ ᴀʟʟ ᴛʜᴇ ᴄᴏᴍᴍᴀɴᴅs ᴀ
 🔹 <code>/plan</code> - Check Premium Plans.
 🔹 <code>/myplan</code> - Check your current status.
 🔹 <code>/id</code> - Get your Telegram ID.
-🔹 <code>/info</code> - Get User Information.
 🔹 <code>/img_2_link</code> - Create Link from Image.
+🔹 <code>/clone</code> - Create your own bot.
 
 <b>🔍 Hᴏᴡ ᴛᴏ Sᴇᴀʀᴄʜ?</b>
-Just type the <b>Movie or Series Name</b> in the Group or PM, and I will send the files."""
+Just type the <b>Movie or Series Name</b> in the Group or PM."""
 
-    # --- 🦹 ADMIN COMMANDS ---
-    ADMIN_COMMAND_TXT = """<b>🦹 <u>Aᴅᴍɪɴ Cᴏᴍᴍᴀɴᴅs</u></b>
+    # --- 🤖 CLONE GUIDE (New) ---
+    CLONE_TXT = """<b>🤖 <u>Cʟᴏɴᴇ Bᴏᴛ Gᴜɪᴅᴇ</u></b>
 
-<b>🗂️ Iɴᴅᴇxɪɴɢ Oᴘᴇʀᴀᴛɪᴏɴs:</b>
-🔹 <code>/index_channels</code> - List indexed channels.
-🔹 <code>/add_channel [ID]</code> - Add a channel for indexing.
-🔹 <code>/remove_channel [ID]</code> - Remove a channel.
-🔹 <code>/delete [Query]</code> - Delete specific files from DB.
-🔹 <code>/delete_all</code> - Delete ALL files (Reset DB).
+<i>You can create your own bot that works exactly like this one!</i>
 
-<b>📢 Bʀᴏᴀᴅᴄᴀsᴛ & F-Sᴜʙ:</b>
-🔹 <code>/broadcast</code> - Send message to all users/groups.
-🔹 <code>/add_fsub [ID]</code> - Set Force Subscribe Channel.
-🔹 <code>/del_fsub</code> - Remove Force Subscribe.
-🔹 <code>/view_fsub</code> - Check F-Sub Settings.
+<b>1️⃣ Step 1:</b> Go to @BotFather and create a new bot.
+<b>2️⃣ Step 2:</b> Get the <b>Bot Token</b>.
+<b>3️⃣ Step 3:</b> Use command: <code>/clone [Bot Token]</code>
 
-<b>👥 Mᴏᴅᴇʀᴀᴛɪᴏɴ:</b>
-🔹 <code>/users</code> - List all users in DB.
-🔹 <code>/chats</code> - List all groups in DB.
-🔹 <code>/ban_user [ID]</code> - Ban a user from bot.
-🔹 <code>/unban_user [ID]</code> - Unban a user.
-🔹 <code>/ban_grp [ID]</code> - Disable bot in a group.
-🔹 <code>/leave [ID]</code> - Force leave a group.
+<b>⚠️ Note:</b>
+• Clone bots are valid for <b>30 Days</b> (Renewable).
+• You will be the owner of your clone.
+• All files from my database will be available in your clone."""
 
-<b>💎 Pʀᴇᴍɪᴜᴍ Mᴀɴᴀɢᴇᴍᴇɴᴛ:</b>
-🔹 <code>/add_prm [ID] [Days]</code> - Give Premium manually.
-🔹 <code>/rm_prm [ID]</code> - Remove Premium.
-🔹 <code>/prm_list</code> - List all Premium users.
+    # --- 🦹 ADMIN COMMANDS (Clean Version) ---
+    ADMIN_COMMAND_TXT = """<b>🦹 <u>Aᴅᴍɪɴ Cᴏɴᴛʀᴏʟs</u></b>
 
-<b>⚙️ Sʏsᴛᴇᴍ:</b>
-🔹 <code>/stats</code> - Check Bot Statistics.
-🔹 <code>/restart</code> - Restart the bot server.
-🔹 <code>/eval</code> - Execute Python Code."""
+<b>🛠️ Mᴀsᴛᴇʀ Cᴏɴᴛʀᴏʟ:</b>
+🔹 <code>/admin</code> or <code>/settings</code> - <b>Oᴘᴇɴ Gᴜɪ Cᴏɴᴛʀᴏʟ Pᴀɴᴇʟ</b> (Manage DB, Channels, Settings, Clones).
+
+<b>⚡ Qᴜɪᴄᴋ Aᴄᴛɪᴏɴs:</b>
+🔹 <code>/index [Channel ID]</code> - Quick Indexing.
+🔹 <code>/delete [Query]</code> - Delete files.
+🔹 <code>/broadcast</code> - Send Message to Users.
+🔹 <code>/users</code> - View User List.
+🔹 <code>/stats</code> - Check System Status.
+
+<i>ℹ️ Note: Manage Index Channels, Auth Channels, and Premium Users directly from the <b>/admin</b> panel.</i>"""
 
     # --- 💎 PREMIUM PLAN ---
-    # Used in: commands.py (plan)
     PLAN_TXT = """<b>💎 <u>Pʀᴇᴍɪᴜᴍ Uᴘɢʀᴀᴅᴇ</u></b>
 
 <i>Uɴʟᴏᴄᴋ ᴛʜᴇ ғᴜʟʟ ᴘᴏᴛᴇɴᴛɪᴀʟ ᴏғ Fᴀsᴛ Fɪɴᴅᴇʀ!</i> 🚀
@@ -120,8 +118,9 @@ Just type the <b>Movie or Series Name</b> in the Group or PM, and I will send th
 <b>🔗 Usᴇʀɴᴀᴍᴇ:</b> {}
 <b>👥 Tᴏᴛᴀʟ Mᴇᴍʙᴇʀs:</b> <code>{}</code>"""
 
-    # --- ⚠️ LEGACY VARIABLES (Required to prevent errors) ---
+    # --- ⚠️ LEGACY VARIABLES ---
     NOT_FILE_TXT = """👋 Hᴇʟʟᴏ {},<br><br>I ᴄᴀɴ'ᴛ ғɪɴᴅ <b>{}</b> ɪɴ ᴍʏ ᴅᴀᴛᴀʙᴀsᴇ! 🥲"""
-    IMDB_TEMPLATE = """✅ I Fᴏᴜɴᴅ: <code>{query}</code>""" # Minimal fallback
+    IMDB_TEMPLATE = """✅ I Fᴏᴜɴᴅ: <code>{query}</code>""" 
     FILE_CAPTION = """<b>📂 {file_name}</b>\n<b>💾 Sɪᴢᴇ: {file_size}</b>"""
     WELCOME_TEXT = """<b>👋 Hᴇʟʟᴏ {mention}, Wᴇʟᴄᴏᴍᴇ ᴛᴏ {title}!</b>"""
+    START_IMG = "https://i.ibb.co/qD4q2dG/image.jpg"
