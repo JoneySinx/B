@@ -4,7 +4,7 @@ from hydrogram import Client, filters
 from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from utils import temp
 from database.users_chats_db import db
-from info import SUPPORT_LINK
+from info import SUPPORT_LINK, LOG_CHANNEL, ADMINS
 
 # लॉगिंग सेट करें
 logger = logging.getLogger(__name__)
@@ -25,85 +25,108 @@ async def disabled_chat(_, __, message: Message):
 banned_user_filter = filters.create(banned_users)
 disabled_group_filter = filters.create(disabled_chat)
 
-# --- BANNED USER HANDLER (PRIVATE) ---
+# ==============================================================================
+# 🚫 BANNED USER HANDLER (JAIL SYSTEM)
+# ==============================================================================
 @Client.on_message(filters.private & banned_user_filter & filters.incoming)
 async def is_user_banned(bot, message):
-    """बैन किए गए यूजर को हैंडल करता है"""
+    """
+    Handles Banned Users with God Mode Features (Shadow Ban & Alerts).
+    """
+    user_id = message.from_user.id
     
-    # DB से बैन का कारण प्राप्त करें
-    ban_info = await db.get_ban_status(message.from_user.id)
-    reason = ban_info.get("ban_reason", "Violation of Rules")
+    # 1. Fetch Ban Details
+    ban_info = await db.get_ban_status(user_id)
+    reason = ban_info.get("ban_reason", "Violation of Rules") if ban_info else "Bad Behavior"
     
-    # Advanced UI Message
+    # 👑 GOD MODE: SHADOW BAN CHECK
+    # अगर 'is_shadow' True है, तो बोट रिप्लाई ही नहीं करेगा (Silent Ignore)
+    if ban_info and ban_info.get("is_shadow", False):
+        message.stop_propagation()
+        return
+
+    # 🚨 SECURITY ALERT (LOG CHANNEL)
+    # एडमिन को पता चलना चाहिए कि कैदी भागने की कोशिश कर रहा है
+    try:
+        await bot.send_message(
+            LOG_CHANNEL,
+            f"<b>🚨 BANNED USER DETECTED</b>\n\n"
+            f"👤 <b>User:</b> {message.from_user.mention} (`{user_id}`)\n"
+            f"📝 <b>Tried to Send:</b> `{message.text[:50]}`\n"
+            f"🚫 <b>Reason:</b> {reason}"
+        )
+    except: pass
+
+    # 2. Advanced Ban Message
     text = (
         f"<b>🚫 Aᴄᴄᴇss Dᴇɴɪᴇᴅ / प्रवेश वर्जित</b>\n\n"
-        f"👮‍♂️ <b>Dᴇᴀʀ Usᴇʀ:</b> {message.from_user.mention}\n"
-        f"🛑 <b>Sᴛᴀᴛᴜs:</b> <code>Bᴀɴɴᴇᴅ 🔒</code>\n\n"
+        f"👮‍♂️ <b>Usᴇʀ:</b> {message.from_user.mention}\n"
+        f"🛑 <b>Sᴛᴀᴛᴜs:</b> <code>Bʟᴀᴄᴋʟɪsᴛᴇᴅ 🔒</code>\n\n"
         f"📝 <b>Rᴇᴀsᴏɴ:</b> <code>{reason}</code>\n\n"
-        f"<i>If you think this is a mistake, please contact support.</i>"
+        f"<i>⚠️ You have been banned by the Administrator. If you think this is a mistake, you can submit an appeal.</i>"
     )
 
-    btn = [[InlineKeyboardButton('🛠️ Sᴜᴘᴘᴏʀᴛ / सहायता', url=SUPPORT_LINK)]]
+    # 3. Appeal Button (Auto-Generated Message)
+    appeal_msg = f"Hello Admin, I am banned from the bot.\nID: {user_id}\nReason: {reason}\nPlease review my ban."
+    appeal_url = f"https://t.me/share/url?url={appeal_msg}"
+
+    btn = [
+        [InlineKeyboardButton('🛠️ Sᴜᴘᴘᴏʀᴛ Cʜᴀᴛ', url=SUPPORT_LINK)],
+        [InlineKeyboardButton('📝 Sᴜʙᴍɪᴛ Aᴘᴘᴇᴀʟ', url=appeal_url)] # One-Click Appeal
+    ]
     
     try:
-        # कोट करके रिप्लाई करें ताकि यूजर को पता चले
         await message.reply(
             text=text,
             reply_markup=InlineKeyboardMarkup(btn),
             quote=True
         )
     except Exception as e:
-        logger.warning(f"Failed to reply to banned user {message.from_user.id}: {e}")
+        logger.warning(f"Failed to reply to banned user {user_id}: {e}")
     
     # आगे की प्रोसेसिंग रोकें
     message.stop_propagation()
 
-# --- DISABLED GROUP HANDLER (GROUPS) ---
+# ==============================================================================
+# 🛑 DISABLED GROUP HANDLER (AUTO-PURGE)
+# ==============================================================================
 @Client.on_message(filters.group & disabled_group_filter & filters.incoming)
 async def is_group_disabled(bot, message):
-    """बैन किए गए ग्रुप को हैंडल करता है और Leave करता है"""
-    
-    # DB से ग्रुप बैन का कारण प्राप्त करें
+    """
+    Handles Banned Groups -> Warns, Pins, Leaves.
+    """
+    # 1. Fetch Group Details
     chat_info = await db.get_chat(message.chat.id)
-    reason = chat_info.get('reason', "Policy Violation") if chat_info else "Unknown"
+    reason = chat_info.get('reason', "Policy Violation") if chat_info else "Spam/Abuse"
     
-    # Advanced UI Message for Groups
+    # 2. Termination Message
     text = (
-        f"<b>🚫 Sᴇʀᴠɪᴄᴇ Tᴇʀᴍɪɴᴀᴛᴇᴅ / सेवा समाप्त</b>\n\n"
+        f"<b>🚫 Sᴇʀᴠɪᴄᴇ Tᴇʀᴍɪɴᴀᴛᴇᴅ</b>\n\n"
         f"🛑 <b>Gʀᴏᴜᴘ:</b> {message.chat.title}\n"
         f"🔒 <b>Sᴛᴀᴛᴜs:</b> <code>Dɪsᴀʙʟᴇᴅ ʙʏ Aᴅᴍɪɴ</code>\n\n"
         f"📝 <b>Rᴇᴀsᴏɴ:</b> <code>{reason}</code>\n\n"
-        f"<i>🤖 The bot will leave this chat now. Contact support for appeals.</i>"
+        f"<i>🤖 The bot will leave this chat in 5 seconds.</i>"
     )
 
-    btn = [[InlineKeyboardButton('🛠️ Sᴜᴘᴘᴏʀᴛ / सहायता', url=SUPPORT_LINK)]]
+    btn = [[InlineKeyboardButton('👮‍♂️ Cᴏɴᴛᴀᴄᴛ Sᴜᴘᴘᴏʀᴛ', url=SUPPORT_LINK)]]
 
     try:
-        # 1. Send Warning Message
-        sent_msg = await message.reply(
-            text=text,
-            reply_markup=InlineKeyboardMarkup(btn)
-        )
+        # Send Warning
+        sent_msg = await message.reply(text, reply_markup=InlineKeyboardMarkup(btn))
         
-        # 2. Try to Pin the message (So admins see it)
-        try:
-            await sent_msg.pin(disable_notification=False)
-        except Exception:
-            pass # पिन की परमिशन नहीं होगी तो इग्नोर करें
+        # Try to Pin (For Visibility)
+        try: await sent_msg.pin(disable_notification=False)
+        except: pass
         
-        # 3. Wait 5 Seconds (User पढ़ने का समय)
+        # Wait for users to read
         await asyncio.sleep(5)
         
-        # 4. Leave Chat
+        # Leave
         await bot.leave_chat(message.chat.id)
         
     except Exception as e:
-        logger.error(f"Error handling disabled group {message.chat.id}: {e}")
-        # अगर मैसेज नहीं भेज पाए, तो भी चुपचाप निकलने की कोशिश करें
-        try:
-            await bot.leave_chat(message.chat.id)
-        except:
-            pass
+        logger.error(f"Error leaving disabled group {message.chat.id}: {e}")
+        try: await bot.leave_chat(message.chat.id)
+        except: pass
 
-    # आगे की प्रोसेसिंग रोकें
     message.stop_propagation()
