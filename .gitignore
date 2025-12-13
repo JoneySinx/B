@@ -1,0 +1,43 @@
+# 🐍 Python Garbage
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 🔐 Sensitive Configs (NEVER UPLOAD THESE)
+config.env
+.env
+venv/
+env/
+token.pickle
+session.string
+
+# 🗑️ Bot Junk
+downloads/
+raw_files/
+cache/
+*.log
+terminal_output.txt
+eval_output.txt
+log.txt
+
+# 🐳 Docker
+.dockerignore
+
+# 🍎 Mac Junk
+.DS_Store
