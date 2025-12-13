@@ -42,16 +42,23 @@ async def create_text_index():
 def clean_text(text):
     if not text: return ""
     text = str(text)
+    
+    # 1. Remove unwanted patterns
     text = RE_USERNAMES.sub("", text)
     text = RE_BRACKETS.sub("", text)
-    text = RE_EXTENSIONS.sub("", text)
+    text = RE_EXTENSIONS.sub("", text) # Remove extensions like .mkv
     text = RE_SPECIAL.sub(" ", text)
+    
+    # 2. Fix Spaces
     text = RE_SPACES.sub(" ", text).strip()
+    
+    # 3. Naming Convention
     text = text.title()
-    text = text.replace(" L ", " l ")
+    text = text.replace(" L ", " l ") # Fix 'L' to 'l'
+    
     return text
 
-# --- 🚦 ROUTING & CONFIG LOGIC (NEW) ---
+# --- 🚦 ROUTING & CONFIG LOGIC ---
 async def get_target_db(channel_id):
     """
     चेक करता है कि इस चैनल की फाइल किस DB में जानी चाहिए।
@@ -75,17 +82,7 @@ async def set_route(channel_id, target):
         upsert=True
     )
 
-async def get_bot_settings():
-    """
-    पूरी बॉट सेटिंग्स (Search Mode, Shortlink Status) लाने के लिए।
-    """
-    stg = await col_config.find_one({'_id': 'main_settings'})
-    if not stg: 
-        # Default Settings
-        return {'search_mode': 'hybrid', 'shortlink': False, 'auth_channel': None}
-    return stg
-
-# --- 💾 SAVE FILE (SMART) ---
+# --- 💾 SAVE FILE (SMART DUAL DB) ---
 async def save_file(media, target_db="primary"):
     """
     target_db: 'primary' (Default) or 'backup'
@@ -116,9 +113,9 @@ async def save_file(media, target_db="primary"):
         logger.error(f"Save Error: {e}")
         return 'err'
 
-# --- 🔄 UPDATE FILE ---
+# --- 🔄 UPDATE FILE (GLOBAL UPDATE) ---
 async def update_file(media):
-    # अपडेट दोनों जगह ट्राई करेगा क्योंकि हमें नहीं पता फाइल कहाँ है
+    # अपडेट दोनों जगह ट्राई करेगा क्योंकि हमें नहीं पता फाइल कहाँ है (Primary में या Backup में)
     file_id = unpack_new_file_id(media.file_id)
     file_name = clean_text(media.file_name)
     file_caption = clean_text(media.caption)
@@ -133,7 +130,7 @@ async def update_file(media):
         return 'suc'
     return 'err'
 
-# --- 🔍 SMART SEARCH (HYBRID) ---
+# --- 🔍 SMART SEARCH (HYBRID LOGIC) ---
 async def get_search_results(query, max_results=MAX_BTN, offset=0, lang=None, mode="hybrid"):
     """
     mode: 'primary', 'backup', or 'hybrid'
@@ -154,11 +151,10 @@ async def get_search_results(query, max_results=MAX_BTN, offset=0, lang=None, mo
     collections_to_search = []
     if mode == 'primary': collections_to_search = [col_main]
     elif mode == 'backup': collections_to_search = [col_backup]
-    else: collections_to_search = [col_main, col_backup] # Hybrid
+    else: collections_to_search = [col_main, col_backup] # Hybrid Order: Primary First, then Backup
 
     # 3. सर्च एग्जीक्यूट करो
     final_files = []
-    total_count = 0
     
     for col in collections_to_search:
         try:
@@ -166,8 +162,7 @@ async def get_search_results(query, max_results=MAX_BTN, offset=0, lang=None, mo
             cursor_count = await col.count_documents(filter_dict)
             if cursor_count > 0:
                 cursor = col.find(filter_dict, {'score': {'$meta': 'textScore'}}).sort([('score', {'$meta': 'textScore'})])
-                # हम अभी लिमिट नहीं लगा रहे, क्योंकि हाइब्रिड में मर्ज करना होगा
-                # परफॉर्मेंस के लिए हम शुरू के 50-50 रिजल्ट ले सकते हैं
+                # Limit fetched results per DB to avoid memory overload
                 found = [doc async for doc in cursor.limit(100)] 
                 final_files.extend(found)
             else:
@@ -188,16 +183,8 @@ async def get_search_results(query, max_results=MAX_BTN, offset=0, lang=None, mo
                     final_files.extend(found)
                 except: pass
 
-    # 5. रिजल्ट्स को मैनेज करना (Pagination & Sorting)
-    # हाइब्रिड मोड में डुप्लीकेट हो सकते हैं (वैसे ID यूनिक है, पर लिस्ट में मिक्स हो सकते हैं)
-    # हम फाइल नाम की लंबाई या मैच स्कोर के हिसाब से सॉर्ट कर सकते हैं
-    
+    # 5. Pagination Logic (Memory Slicing for Hybrid Results)
     total_count = len(final_files)
-    
-    # Pagination Logic
-    # चूंकि हम दो DB से ला रहे हैं, 'skip/limit' DB लेवल पर काम नहीं करेगा अगर हम मर्ज कर रहे हैं।
-    # इसलिए हम Python स्लाइसिंग का उपयोग करेंगे (Memory में)।
-    # नोट: बहुत बड़े डेटाबेस के लिए यह थोड़ा भारी हो सकता है, लेकिन 50-100 फाइलों के लिए ठीक है।
     
     start = offset
     end = offset + max_results
@@ -226,7 +213,16 @@ async def get_file_details(query):
         doc = await col_backup.find_one({'_id': query})
     return doc
 
-# --- FILE ID UTILS (Same as before) ---
+# --- 📊 STATS FUNCTION (For Breakdown) ---
+async def db_count_documents():
+    """
+    Returns: Primary Count, Backup Count, Total Count
+    """
+    c1 = await col_main.count_documents({})
+    c2 = await col_backup.count_documents({})
+    return c1, c2, c1 + c2
+
+# --- FILE ID UTILS ---
 def encode_file_id(s: bytes) -> str:
     r = b""
     n = 0
@@ -240,8 +236,3 @@ def encode_file_id(s: bytes) -> str:
 def unpack_new_file_id(new_file_id):
     decoded = FileId.decode(new_file_id)
     return encode_file_id(pack("<iiqq", int(decoded.file_type), decoded.dc_id, decoded.media_id, decoded.access_hash))
-
-async def db_count_documents():
-    c1 = await col_main.count_documents({})
-    c2 = await col_backup.count_documents({})
-    return c1 + c2 # Total files
