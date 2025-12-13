@@ -1,12 +1,21 @@
+# --- Core Bot ---
 hydrogram
 tgcrypto
+
+# --- Database ---
 motor
+dnspython
+
+# --- Server & Web ---
 aiohttp
 aiofiles
-dnspython
-speedtest-cli
+uvloop
+
+# --- Utilities ---
 pytz
 requests
 qrcode
 Pillow
 
+# --- Extras ---
+speedtest-cli
