@@ -5,21 +5,28 @@ import time
 import traceback
 import asyncio
 import subprocess
+import shutil
+import json
+import math
 from datetime import datetime
-from hydrogram import Client, filters
+from hydrogram import Client, filters, enums
 from info import ADMINS
 from database.users_chats_db import db
-from utils import temp
+from utils import temp, get_size, get_readable_time
 
-# --- SHELL / TERMINAL COMMAND (/sh) ---
+# ==============================================================================
+# 🐚 SHELL / TERMINAL COMMAND (/sh)
+# ==============================================================================
 @Client.on_message(filters.command(["sh", "shell", "bash"]) & filters.user(ADMINS))
 async def shell_runner(client, message):
-    """Run Linux Terminal Commands via Bot"""
+    """
+    God Mode Terminal: Runs Bash Commands & Handles Large Outputs
+    """
     if len(message.command) < 2:
-        return await message.reply("<b>Usage:</b> `/sh git pull`")
+        return await message.reply("<b>⚠️ Usage:</b> `/sh git pull`\n<i>Run Linux commands directly.</i>")
     
     cmd_text = message.text.split(maxsplit=1)[1]
-    msg = await message.reply("<b>🏃 Running Terminal Command...</b>")
+    status_msg = await message.reply("<b>🏃 Running Terminal Command...</b>")
     
     try:
         start_time = time.time()
@@ -31,46 +38,55 @@ async def shell_runner(client, message):
         stdout, stderr = await process.communicate()
         end_time = time.time()
         
-        result = str(stdout.decode().strip()) + str(stderr.decode().strip())
+        result = ""
+        if stdout:
+            result += f"<b>Output:</b>\n<pre>{stdout.decode().strip()}</pre>\n"
+        if stderr:
+            result += f"<b>Error:</b>\n<pre>{stderr.decode().strip()}</pre>\n"
+            
         taken = round(end_time - start_time, 3)
-        
-        if len(result) > 4000:
+        final_output = f"<b>🐚 Command:</b> `{cmd_text}`\n\n{result}\n<b>⏱ Taken:</b> {taken}s"
+
+        if len(final_output) > 4000:
             with open("terminal_output.txt", "w+", encoding="utf-8") as f:
-                f.write(result)
+                f.write(str(stdout.decode().strip()) + "\n\nERRORS:\n" + str(stderr.decode().strip()))
+            
             await message.reply_document(
                 "terminal_output.txt", 
-                caption=f"<b>🐚 Command:</b> `{cmd_text}`\n<b>⏱ Taken:</b> {taken}s"
+                caption=f"<b>🐚 Command:</b> `{cmd_text}`\n<b>⏱ Taken:</b> {taken}s",
+                protect_content=True
             )
-            await msg.delete()
+            await status_msg.delete()
             os.remove("terminal_output.txt")
         else:
-            if not result: result = "No Output"
-            await msg.edit(f"<b>🐚 Command:</b> `{cmd_text}`\n\n<pre>{result}</pre>\n\n<b>⏱ Taken:</b> {taken}s")
+            if not result: result = "<code>No Output</code>"
+            await status_msg.edit(final_output)
             
     except Exception as e:
-        await msg.edit(f"<b>❌ Error:</b>\n<pre>{e}</pre>")
+        await status_msg.edit(f"<b>❌ Execution Error:</b>\n<pre>{e}</pre>")
 
-# --- PYTHON EVAL COMMAND (/eval) ---
-@Client.on_message(filters.command("eval") & filters.user(ADMINS))
-@Client.on_edited_message(filters.command("eval") & filters.user(ADMINS))
+# ==============================================================================
+# 🐍 PYTHON EVAL COMMAND (/eval)
+# ==============================================================================
+@Client.on_message(filters.command(["eval", "run"]) & filters.user(ADMINS))
 async def executor(client, message):
     """
-    Advanced Python Code Executor
-    Features: Live Edit, Auto-Imports, Shortcuts, Time Tracking
+    God Mode Python Executor
+    Variables: c=client, m=message, r=reply, db=database, p=print
     """
     if len(message.command) < 2:
-        return await message.reply(f"<b>Usage:</b> `/eval print('hello')`")
+        return await message.reply(f"<b>⚠️ Usage:</b> `/eval print(c.me.username)`")
     
-    # 1. Prepare Code
+    # 1. Parsing Code
     try:
         cmd = message.text.split(maxsplit=1)[1]
     except IndexError:
         return
         
-    status_msg = await message.reply("<b>🔄 Processing...</b>")
+    status_msg = await message.reply("<b>🔄 Compiling...</b>")
     
-    # 2. Setup Environment & Shortcuts
-    # Shortcuts: c=client, m=message, r=reply, db=database
+    # 2. Setup Environment
+    # Shortcuts for Admins (The God Features)
     reply_to = message.reply_to_message or message
     
     old_stderr = sys.stderr
@@ -82,8 +98,13 @@ async def executor(client, message):
     start_time = time.time()
     
     try:
-        # Create Async Function to allow 'await'
-        await aexec(cmd, client, message, reply_to)
+        # Pass shortcuts to the function
+        await aexec(
+            cmd, 
+            client, 
+            message, 
+            reply_to
+        )
     except Exception:
         exc = traceback.format_exc()
     
@@ -96,45 +117,53 @@ async def executor(client, message):
     end_time = time.time()
     taken = round(end_time - start_time, 3)
 
-    # 4. Format Result
-    evaluation = ""
+    # 4. Format Output
+    output = ""
     if exc:
-        evaluation = exc
-    elif stderr:
-        evaluation = stderr
-    elif stdout:
-        evaluation = stdout
-    else:
-        evaluation = "Success (No Output)"
-
-    # 5. Send Result
-    final_output = f"<b>💻 Code:</b>\n<pre>{cmd[:50]}...</pre>\n\n<b>📤 Output:</b>\n<pre>{evaluation}</pre>\n\n<b>⏱ Taken:</b> {taken}s"
+        output += f"<b>❌ Exception:</b>\n<pre>{exc}</pre>\n"
+    if stderr:
+        output += f"<b>⚠️ Stderr:</b>\n<pre>{stderr}</pre>\n"
+    if stdout:
+        output += f"<b>📤 Stdout:</b>\n<pre>{stdout}</pre>\n"
     
-    if len(final_output) > 4096:
+    if not output:
+        output = "<code>Success (No Output)</code>"
+
+    # 5. Send Result (Smart Splitter)
+    final_text = f"<b>💻 Code:</b>\n<pre>{cmd[:100]}...</pre>\n\n{output}\n<b>⏱ Taken:</b> {taken}s"
+    
+    if len(final_text) > 4000:
         with open("eval_output.txt", "w+", encoding="utf-8") as f:
-            f.write(evaluation)
+            f.write(f"INPUT:\n{cmd}\n\nOUTPUT:\n{stdout}\n\nERRORS:\n{stderr}\n\nTRACEBACK:\n{exc}")
+        
         await message.reply_document(
             "eval_output.txt",
-            caption=f"<b>💻 Code:</b> `{cmd[:50]}...`\n<b>⏱ Taken:</b> {taken}s"
+            caption=f"<b>💻 Eval Result</b>\n<b>⏱ Taken:</b> {taken}s",
+            protect_content=True
         )
         await status_msg.delete()
         os.remove("eval_output.txt")
     else:
-        await status_msg.edit(final_output)
+        await status_msg.edit(final_text)
 
+# --- 🛠️ ASYNC EXECUTOR WRAPPER ---
 async def aexec(code, client, message, reply_to):
-    # This wrapper allows using 'await' inside /eval
-    # Pre-loaded variables for convenience
+    # Shortcuts available inside /eval
+    # c = client, m = message, r = reply, db = db, p = print
+    # u = user, ch = chat
+    
     exec(
-        f"async def __aexec(client, message, r, c, m, db, temp): " +
+        f"async def __aexec(c, m, r, db, temp, p, u, ch): " +
         "".join(f"\n {l}" for l in code.split("\n"))
     )
+    
     return await locals()["__aexec"](
-        client, 
-        message, 
-        reply_to,      # r
-        client,        # c
-        message,       # m
-        db,            # db
-        temp           # temp
+        client,            # c
+        message,           # m
+        reply_to,          # r
+        db,                # db
+        temp,              # temp
+        print,             # p
+        message.from_user, # u
+        message.chat       # ch
     )
