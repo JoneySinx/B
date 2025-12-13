@@ -244,4 +244,4 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip, target_db):
                 f"<b>♻️ Dᴜᴘʟɪᴄᴀᴛᴇs:</b> <code>{duplicate}</code>\n"
                 f"<b>🗑️ Sᴋɪᴘᴘᴇᴅ:</b> <code>{deleted + no_media + unsupported}</code>",
                 parse_mode=enums.ParseMode.HTML
-            )
+                        )
