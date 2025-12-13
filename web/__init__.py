@@ -1,12 +1,22 @@
+import logging
 from aiohttp import web
-# ध्यान दें: हमने 'stream_routes' को 'route' से बदल दिया है क्योंकि पिछली फाइल route.py थी
 from web.route import routes
 
+# ==============================================================================
+# 🚀 WEB SERVER FACTORY
+# ==============================================================================
 def create_app():
-    # client_max_size को 30MB तक बढ़ाना सुरक्षित है
-    app = web.Application(client_max_size=30000000)
+    """
+    Creates the Aiohttp Web Application with High Capacity.
+    """
+    # 1. High Traffic Capacity (100 MB Limit)
+    # साधारण बोट्स 10MB पर क्रैश हो जाते हैं, हमने इसे 100MB कर दिया है।
+    app = web.Application(client_max_size=100 * 1024 * 1024)
+    
+    # 2. Register All Routes
     app.add_routes(routes)
+    
     return app
 
-# यह ऑब्जेक्ट bot.py में इस्तेमाल होगा
+# 3. Export App Instance (Used in bot.py)
 web_app = create_app()
