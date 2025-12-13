@@ -8,18 +8,33 @@ from pymongo import TEXT
 from umongo import Instance, Document, fields
 from motor.motor_asyncio import AsyncIOMotorClient
 from marshmallow.exceptions import ValidationError
-from info import DATA_DATABASE_URL, DATABASE_NAME, COLLECTION_NAME, USE_CAPTION_FILTER
+from info import DATABASE_URI, BACKUP_DATABASE_URI, DATABASE_NAME, COLLECTION_NAME, USE_CAPTION_FILTER
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# --- DATABASE CONNECTION ---
-client = AsyncIOMotorClient(DATA_DATABASE_URL)
+# ==============================================================================
+# 🗄️ DATABASE CONNECTION (DUAL ENGINE)
+# ==============================================================================
+
+# 1. Primary Engine (Main)
+client = AsyncIOMotorClient(DATABASE_URI)
 db = client[DATABASE_NAME]
 instance = Instance(db)
 
+# 2. Secondary Engine (Backup - Optional)
+# If Backup URI is provided, we connect to it. Otherwise, we simulate backup within same DB.
+if BACKUP_DATABASE_URI:
+    client_bak = AsyncIOMotorClient(BACKUP_DATABASE_URI)
+    db_bak = client_bak[DATABASE_NAME]
+    instance_bak = Instance(db_bak)
+else:
+    # Use same DB but different collection for "Backup" simulation
+    db_bak = db
+    instance_bak = instance
+
 # ==============================================================================
-# 🗄️ DATABASE MODELS (SCHEMAS)
+# 📝 DATABASE MODELS (SCHEMAS)
 # ==============================================================================
 
 # 1. Primary Collection
@@ -41,7 +56,7 @@ class Media(Document):
         ]
 
 # 2. Backup Collection (Dual DB)
-@instance.register
+@instance_bak.register
 class MediaBackup(Document):
     file_id = fields.StrField(attribute='_id')
     file_ref = fields.StrField(allow_none=True)
@@ -52,7 +67,8 @@ class MediaBackup(Document):
     caption = fields.StrField(allow_none=True)
     
     class Meta:
-        collection_name = f"{COLLECTION_NAME}_backup"
+        # If dual URI, collection name can be same. If single URI, append _backup
+        collection_name = COLLECTION_NAME if BACKUP_DATABASE_URI else f"{COLLECTION_NAME}_backup"
         indexes = [
             'file_name',
             ('file_name', TEXT)
@@ -91,7 +107,7 @@ asyncio.create_task(create_indexes())
 async def save_file(media, target_db="primary"):
     """
     Saves file to Primary or Backup DB based on Admin's command.
-    target_db: 'primary' or 'backup'
+    target_db: 'primary', 'backup', 'both'
     """
     entry = {
         "file_id": media.file_id,
@@ -103,17 +119,31 @@ async def save_file(media, target_db="primary"):
         "caption": media.caption.html if media.caption else None,
     }
     
-    # Select Target Collection
-    Collection = Media if target_db == "primary" else MediaBackup
+    saved = []
     
-    try:
-        file = Collection(**entry)
-        await file.commit()
-        return 'suc'
-    except DuplicateKeyError:
-        return 'dup'
-    except ValidationError:
-        return 'err'
+    # Logic for Primary
+    if target_db in ["primary", "both"]:
+        try:
+            file = Media(**entry)
+            await file.commit()
+            saved.append('primary')
+        except DuplicateKeyError:
+            saved.append('primary_dup')
+        except Exception as e:
+            logger.error(f"Save Primary Error: {e}")
+
+    # Logic for Backup
+    if target_db in ["backup", "both"]:
+        try:
+            file = MediaBackup(**entry)
+            await file.commit()
+            saved.append('backup')
+        except DuplicateKeyError:
+            saved.append('backup_dup')
+        except Exception as e:
+            logger.error(f"Save Backup Error: {e}")
+            
+    return saved
 
 # ==============================================================================
 # 🔍 GET SEARCH RESULTS (HYBRID ENGINE)
@@ -208,11 +238,11 @@ async def delete_files(query, target="all"):
         
     return deleted
 
-# B. SURGICAL DELETE (Single File by ID) - 🔥 MISSING FEATURE ADDED
+# B. SURGICAL DELETE (Single File by ID)
 async def delete_one_file(file_id, target="all"):
     """
     Deletes a specific file by its unique ID.
-    Used in Interactive Mode.
+    Used in Interactive Mode (Admin Panel).
     """
     deleted = 0
     filter_q = {'file_id': file_id}
