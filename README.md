@@ -5,11 +5,11 @@
 </h1>
 
 <p align="center">
-  <a href="https://github.com/YourRepo/Auto-Filter-Bot">
-    <img src="https://img.shields.io/github/stars/YourRepo/Auto-Filter-Bot?style=social">
+  <a href="https://github.com/joneysinx/Auto-Filter-Bot">
+    <img src="https://img.shields.io/github/stars/joneysinx/Auto-Filter-Bot?style=social">
   </a>
-  <a href="https://github.com/YourRepo/Auto-Filter-Bot/fork">
-    <img src="https://img.shields.io/github/forks/YourRepo/Auto-Filter-Bot?label=Fork&style=social">
+  <a href="https://github.com/joneysinx/Auto-Filter-Bot/fork">
+    <img src="https://img.shields.io/github/forks/joneysinx/Auto-Filter-Bot?label=Fork&style=social">
   </a>  
 </p>
 
@@ -39,22 +39,29 @@
 ### 1️⃣ Deploy to Render (Recommended 🐳)
 This bot is optimized for Render with **Docker** (FFmpeg + MediaInfo pre-installed).
 
-<a href="https://render.com/deploy?repo=https://github.com/YourRepo/Auto-Filter-Bot">
+<a href="https://render.com/deploy?repo=https://github.com/joneysinx/Auto-Filter-Bot">
   <img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render">
 </a>
 
-### 2️⃣ Deploy to Heroku
-<a href="https://heroku.com/deploy?template=https://github.com/YourRepo/Auto-Filter-Bot">
+### 2️⃣ Deploy to Koyeb (Fastest ⚡)
+This bot runs smoothly on Koyeb using Docker.
+
+<a href="https://app.koyeb.com/deploy?type=git&repository=https://github.com/joneysinx/Auto-Filter-Bot&branch=main&name=fast-finder-bot">
+  <img src="https://www.koyeb.com/static/images/deploy/button.svg" alt="Deploy to Koyeb">
+</a>
+
+### 3️⃣ Deploy to Heroku
+<a href="https://heroku.com/deploy?template=https://github.com/joneysinx/Auto-Filter-Bot">
   <img src="https://www.herokucdn.com/deploy/button.svg" alt="Deploy">
 </a>
 
-### 3️⃣ Deploy on VPS (Docker)
+### 4️⃣ Deploy on VPS (Docker)
 ```bash
 # 1. Update & Install Docker
 sudo apt update && sudo apt install docker.io -y
 
 # 2. Clone Repo
-git clone [https://github.com/YourRepo/Auto-Filter-Bot](https://github.com/YourRepo/Auto-Filter-Bot)
+git clone [https://github.com/joneysinx/Auto-Filter-Bot](https://github.com/joneysinx/Auto-Filter-Bot)
 cd Auto-Filter-Bot
 
 # 3. Build & Run
