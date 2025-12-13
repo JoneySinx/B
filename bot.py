@@ -13,9 +13,16 @@ from aiohttp import web
 from hydrogram import Client, idle, __version__ as hydro_ver
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+# Performance Booster
+try:
+    import uvloop
+    uvloop.install()
+except:
+    pass
+
 # Local Imports
 from info import API_ID, API_HASH, BOT_TOKEN, PORT, LOG_CHANNEL, TIME_ZONE, ADMINS
-from utils import temp
+from utils import temp, load_temp_config
 from Script import script
 from web import web_app
 from database.users_chats_db import db
@@ -27,6 +34,7 @@ logging.basicConfig(
 )
 logging.getLogger("hydrogram").setLevel(logging.ERROR)
 logging.getLogger("aiohttp").setLevel(logging.ERROR)
+logging.getLogger("pymongo").setLevel(logging.ERROR)
 
 class Bot(Client):
     def __init__(self):
@@ -41,11 +49,16 @@ class Bot(Client):
         )
 
     async def start(self):
-        # Set Start Time
+        # 1. Set Start Time
         temp.START_TIME = time()
         temp.BOT = self 
         
-        # Load Banned Users/Chats
+        # 2. Load Dynamic Config (Memory Cache) 🚀
+        # यह बहुत जरूरी है ताकि हर रिक्वेस्ट पर DB कॉल न हो
+        logging.info("⏳ Loading Dynamic Configurations...")
+        await load_temp_config()
+        
+        # 3. Load Banned List
         try:
             b_users, b_chats = await db.get_banned()
             temp.BANNED_USERS = b_users
@@ -53,7 +66,7 @@ class Bot(Client):
         except Exception as e:
             logging.error(f"Error loading banned list: {e}")
 
-        # Start Client
+        # 4. Start Client
         await super().start()
         me = await self.get_me()
         
@@ -61,33 +74,80 @@ class Bot(Client):
         temp.B_NAME = me.first_name
         temp.B_ID = me.id
         
-        # Start Web Server
+        # 5. Start Web Server
         app = web.AppRunner(web_app)
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
-        logging.info(f"Web Server Started on Port {PORT}")
-        logging.info(f"@{me.username} Started Successfully! 🚀")
+        logging.info(f"🌍 Web Server Started on Port {PORT}")
+        logging.info(f"🚀 @{me.username} Started Successfully!")
         
-        # Start Premium Expiry Checker Task
+        # 6. Start Premium Checker
         self.loop.create_task(self.check_premium_expiry())
 
-        # --- SMART STARTUP LOG ---
+        # 7. 🔥 SMART RESTART CHECKER 🔥
+        # अगर आपने /restart कमांड दिया था, तो यह उसे कन्फर्म करेगा
+        await self.check_pending_restart()
+
+        # 8. Send Startup Log
+        await self.send_startup_log(me)
+
+    async def stop(self, *args):
+        await super().stop()
+        logging.info("Bot Stopped. Bye!")
+
+    # --- 🛠️ HELPER: CHECK RESTART STATUS ---
+    async def check_pending_restart(self):
+        try:
+            conf = await db.get_config()
+            r_data = conf.get('restart_status')
+            
+            if r_data:
+                chat_id = r_data['chat_id']
+                msg_id = r_data['msg_id']
+                
+                try:
+                    await self.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=msg_id,
+                        text=(
+                            "<b>✅ System Restarted Successfully!</b>\n\n"
+                            "🔹 <i>All Modules Reloaded.</i>\n"
+                            "🔹 <i>Cache Cleared.</i>\n"
+                            "🔹 <i>Dual DB Connected.</i>\n"
+                            "🔹 <i>Clone Engine Active.</i>"
+                        )
+                    )
+                except Exception as e:
+                    logging.warning(f"Could not edit restart msg: {e}")
+                
+                # फ्लैग हटा दें
+                await db.update_config('restart_status', None)
+        except Exception as e:
+            logging.error(f"Restart check failed: {e}")
+
+    # --- 📝 HELPER: STARTUP LOG ---
+    async def send_startup_log(self, me):
         try:
             tz = pytz.timezone(TIME_ZONE)
             now = datetime.now(tz)
             date_str = now.strftime("%d %b %Y")
             time_str = now.strftime("%I:%M %p")
         except:
-            date_str = "Unknown"
-            time_str = "Unknown"
+            date_str, time_str = "Unknown", "Unknown"
 
         if LOG_CHANNEL:
             try:
+                # DB Counts
+                from database.ia_filterdb import db_count_documents
+                pri, bak, tot = await db_count_documents()
+                
                 txt = (
                     f"<b>🚀 Bᴏᴛ Sᴛᴀʀᴛᴇᴅ Sᴜᴄᴄᴇssғᴜʟʟʏ!</b>\n\n"
                     f"<b>🤖 Bᴏᴛ:</b> @{me.username}\n"
                     f"<b>🐍 Pʏᴛʜᴏɴ:</b> <code>{platform.python_version()}</code>\n"
                     f"<b>📡 Hʏᴅʀᴏɢʀᴀᴍ:</b> <code>{hydro_ver}</code>\n"
+                    f"<b>🗄️ Pʀɪᴍᴀʀʏ Dʙ:</b> <code>{pri}</code>\n"
+                    f"<b>🗄️ Bᴀᴄᴋᴜᴘ Dʙ:</b> <code>{bak}</code>\n"
                     f"<b>📅 Dᴀᴛᴇ:</b> <code>{date_str}</code>\n"
                     f"<b>⌚ Tɪᴍᴇ:</b> <code>{time_str}</code>"
                 )
@@ -102,18 +162,18 @@ class Bot(Client):
                         chat_id=admin_id,
                         text=f"<b>✅ {me.mention} is now Online!</b>\n📅 <code>{date_str} • {time_str}</code>"
                     )
-                except:
-                    pass
+                except: pass
 
-    async def stop(self, *args):
-        await super().stop()
-        logging.info("Bot Stopped. Bye!")
-
-    # --- PREMIUM EXPIRY CHECKER TASK ---
+    # --- 💎 PREMIUM EXPIRY CHECKER TASK ---
     async def check_premium_expiry(self):
-        logging.info("Premium Expiry Checker Started...")
+        logging.info("💎 Premium Expiry Checker Started...")
         while True:
             try:
+                # अगर प्रीमियम फीचर बंद है तो चेक मत करो
+                if not temp.CONFIG.get('is_premium_active', True): # Default True
+                    await asyncio.sleep(600)
+                    continue
+
                 async for user in await db.get_premium_users():
                     try:
                         user_id = user['id']
@@ -139,57 +199,33 @@ class Bot(Client):
                         except:
                             expiry_str = expiry_date.strftime("%d %b %Y, %I:%M %p")
                         
-                        btn = InlineKeyboardMarkup([[InlineKeyboardButton("💎 Aᴄᴛɪᴠᴇ Pʟᴀɴ Nᴏᴡ", callback_data="activate_plan")]])
+                        btn = InlineKeyboardMarkup([[InlineKeyboardButton("💎 Renew Now", callback_data="activate_plan")]])
                         msg_text = None
                         
-                        # --- REMINDER LOGIC (With Dynamic Emojis) ---
-                        
-                        # 12 Hours Left
-                        if 43200 <= seconds < 43260:
+                        # --- REMINDER LOGIC ---
+                        if 43200 <= seconds < 43260: # 12 Hours
                             msg_text = f"<b>🕛 Pʀᴇᴍɪᴜᴍ Exᴘɪʀɪɴɢ Sᴏᴏɴ!</b>\n\nYour premium plan expires in <b>12 Hours</b>.\n📅 <b>Expiry:</b> <code>{expiry_str}</code>"
-                        
-                        # 6 Hours Left
-                        elif 21600 <= seconds < 21660:
+                        elif 21600 <= seconds < 21660: # 6 Hours
                             msg_text = f"<b>🕕 Pʀᴇᴍɪᴜᴍ Exᴘɪʀɪɴɢ Sᴏᴏɴ!</b>\n\nYour premium plan expires in <b>6 Hours</b>.\n📅 <b>Expiry:</b> <code>{expiry_str}</code>"
-                            
-                        # 3 Hours Left
-                        elif 10800 <= seconds < 10860:
-                            msg_text = f"<b>🕒 Pʀᴇᴍɪᴜᴍ Exᴘɪʀɪɴɢ Sᴏᴏɴ!</b>\n\nYour premium plan expires in <b>3 Hours</b>.\n📅 <b>Expiry:</b> <code>{expiry_str}</code>"
-                            
-                        # 1 Hour Left
-                        elif 3600 <= seconds < 3660:
+                        elif 3600 <= seconds < 3660: # 1 Hour
                             msg_text = f"<b>🕐 Pʀᴇᴍɪᴜᴍ Exᴘɪʀɪɴɢ Sᴏᴏɴ!</b>\n\nYour premium plan expires in <b>1 Hour</b>.\n📅 <b>Expiry:</b> <code>{expiry_str}</code>"
-                            
-                        # 10 Minutes Left
-                        elif 600 <= seconds < 660:
-                            msg_text = f"<b>⚠️ Hᴜʀʀʏ Uᴘ!</b>\n\nYour premium plan expires in just <b>10 Minutes</b>.\n📅 <b>Expiry:</b> <code>{expiry_str}</code>"
-                            
-                        # Expired (<= 0)
-                        elif seconds <= 0:
+                        elif seconds <= 0: # Expired
                             msg_text = f"<b>🚫 Pʀᴇᴍɪᴜᴍ Exᴘɪʀᴇᴅ!</b>\n\nYour plan expired on <b>{expiry_str}</b>.\n<i>Renew now to continue enjoying exclusive features.</i>"
-                            # Reset in DB
                             await db.update_plan(user_id, {'expire': '', 'trial': False, 'plan': '', 'premium': False})
                         
                         if msg_text:
-                            # --- AUTO DELETE OLD REMINDER ---
+                            # Old Reminder Delete
                             old_msg_id = temp.PREMIUM_REMINDERS.get(user_id)
                             if old_msg_id:
-                                try:
-                                    await self.delete_messages(user_id, old_msg_id)
-                                except Exception:
-                                    pass 
+                                try: await self.delete_messages(user_id, old_msg_id)
+                                except: pass 
                             
-                            # --- SEND NEW REMINDER ---
+                            # Send New
                             try:
                                 sent_msg = await self.send_message(chat_id=user_id, text=msg_text, reply_markup=btn)
                                 temp.PREMIUM_REMINDERS[user_id] = sent_msg.id
-                                
-                                # Clear cache if expired
-                                if seconds <= 0:
-                                    temp.PREMIUM_REMINDERS.pop(user_id, None)
-                                    
-                            except Exception as e:
-                                logging.error(f"Could not send reminder to {user_id}: {e}")
+                                if seconds <= 0: temp.PREMIUM_REMINDERS.pop(user_id, None)
+                            except: pass
                                 
                     except Exception as e:
                         logging.error(f"Error checking user {user.get('id')}: {e}")
