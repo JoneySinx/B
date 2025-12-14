@@ -19,7 +19,7 @@ class Database:
         self.notes = self.db.notes
         self.filters = self.db.filters
         self.conf = self.db.bot_settings
-        self.clones = self.db.clones  # 🔥 Clone Collection
+        self.clones = self.db.clones
 
     # ==========================================================================
     # ⚙️ ADMIN PANEL / DYNAMIC CONFIG
@@ -44,7 +44,7 @@ class Database:
                 'delete_time': 300,
                 'dual_save_mode': True,
                 'disable_clone': False,
-                'points_per_referral': 10 # 💰 Default Points
+                'points_per_referral': 10
             }
             await self.conf.insert_one(default_config)
             return default_config
@@ -54,14 +54,15 @@ class Database:
         await self.conf.update_one({'_id': 'main_config'}, {'$set': {key: value}}, upsert=True)
 
     # ==========================================================================
-    # 👤 USER MANAGEMENT (POINTS & REFERRAL ADDED)
+    # 👤 USER MANAGEMENT (🔥 FIXED DATE ERROR)
     # ==========================================================================
     async def new_user(self, id, name):
         return {
             'id': id,
             'name': name,
-            'join_date': datetime.datetime.now().date(),
-            'balance': 0,  # 💰 Points System
+            # 🔥 FIX: Removed .date() -> Now using full datetime object
+            'join_date': datetime.datetime.now(), 
+            'balance': 0,
             'ban_status': {'is_banned': False, 'ban_reason': ''}
         }
 
@@ -92,7 +93,7 @@ class Database:
         return user.get('balance', 0) if user else 0
 
     # ==========================================================================
-    # 🤖 CLONE BOT MANAGEMENT (MISSING PART FIXED)
+    # 🤖 CLONE BOT MANAGEMENT
     # ==========================================================================
     async def add_clone(self, user_id, bot_token, bot_id, bot_name):
         clone_data = {
