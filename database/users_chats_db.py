@@ -53,14 +53,21 @@ class Database:
     async def update_config(self, key, value):
         await self.conf.update_one({'_id': 'main_config'}, {'$set': {key: value}}, upsert=True)
 
+    # 🔥🔥 RESTORED: LEGACY SUPPORT FOR PM_FILTER.PY 🔥🔥
+    async def get_bot_sttgs(self):
+        """
+        Required by pm_filter.py to check if Auto Filter is ON.
+        """
+        return {'AUTO_FILTER': True}
+
     # ==========================================================================
-    # 👤 USER MANAGEMENT (FIXED STATS & DATE)
+    # 👤 USER MANAGEMENT
     # ==========================================================================
     async def new_user(self, id, name):
         return {
             'id': id,
             'name': name,
-            'join_date': datetime.datetime.now(), # 🔥 Fixed Date Error
+            'join_date': datetime.datetime.now(),
             'balance': 0,
             'ban_status': {'is_banned': False, 'ban_reason': ''}
         }
@@ -83,7 +90,6 @@ class Database:
     async def delete_user(self, user_id):
         await self.col.delete_many({'id': int(user_id)})
 
-    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
     async def total_users_count(self):
         return await self.col.count_documents({})
 
@@ -153,7 +159,6 @@ class Database:
     async def update_settings(self, chat_id, settings):
         await self.grp.update_one({'id': int(chat_id)}, {'$set': {'settings': settings}})
 
-    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
     async def total_chat_count(self):
         return await self.grp.count_documents({})
 
@@ -189,7 +194,6 @@ class Database:
     async def get_premium_users(self):
         return self.prm.find({'status.premium': True})
     
-    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
     async def get_premium_count(self):
         return await self.prm.count_documents({'status.premium': True})
 
@@ -253,7 +257,7 @@ class Database:
         await self.filters.delete_many({'chat_id': chat_id})
 
     # ==========================================================================
-    # 💾 DB SIZE UTILS (🔥 WAS MISSING - FIXED)
+    # 💾 DB SIZE UTILS
     # ==========================================================================
     async def get_db_size(self):
         try:
