@@ -98,7 +98,7 @@ def get_size(bytes, suffix="B"):
         bytes /= factor
 
 # ==============================================================================
-# 🔐 ENCODING / DECODING (DEEP LINKING)
+# 🔐 ENCODING / DECODING
 # ==============================================================================
 async def decode(base64_string):
     try:
@@ -119,46 +119,74 @@ async def encode(string):
         return string
 
 # ==============================================================================
-# 🔐 VERIFICATION SYSTEM
+# 🔐 VERIFICATION SYSTEM (BOTH FUNCTIONS INCLUDED)
 # ==============================================================================
 async def get_verify_status(user_id):
     """
-    Check if user is verified.
-    Returns: True (Verified/Disabled) | False (Need Verify)
+    Check if user is verified (Simple Check).
     """
-    if not IS_VERIFY:
-        return True
-        
+    if not IS_VERIFY: return True
     user = await db.get_user(user_id)
-    if not user:
-        return False
-        
+    if not user: return False
     verify_status = user.get('verify_status', {})
     expire_date = verify_status.get('expire', 0)
+    return expire_date > time.time()
+
+async def check_verification(client, user_id):
+    """
+    Check if user is verified (Advanced Check with Config).
+    Requested by commands.py
+    """
+    conf = await db.get_config()
+    if not conf.get('is_verify', False): return True
     
-    if expire_date > time.time():
+    user_status = await db.get_verify_status(user_id)
+    if not user_status.get('is_verified'): return False
+    
+    # Check Expiry
+    verified_time = user_status.get('verified_time', 0)
+    duration = conf.get('verify_duration', VERIFY_EXPIRE)
+    
+    if time.time() - verified_time < duration:
         return True
+    else:
+        await db.update_verify_status(user_id, is_verified=False)
+        return False
+
+async def get_verify_short_link(link):
+    """Generates shortlink for verification."""
+    conf = await db.get_config()
+    api = conf.get('shortlink_api')
+    site = conf.get('shortlink_site')
+    if not api or not site: return link
     
-    return False
+    url = f"https://{site}/api?api={api}&url={link}&format=text"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                if response.status == 200:
+                    res = await response.text()
+                    if "http" in res: return res
+    except: pass
+    return link
 
 async def update_verify_status(user_id, verify_token="", is_verified=False):
-    """Grant verification to user."""
-    expire_time = time.time() + VERIFY_EXPIRE
-    await db.update_verify_status(user_id, expire_time)
+    """Updates DB verification status."""
+    now = time.time()
+    expire_time = now + VERIFY_EXPIRE
+    await db.update_verify_status(user_id, verify_token, is_verified, now, expire_time)
     return True
 
 async def get_shortlink(link, api=None, url=None):
     """Generate Shortlink using API."""
-    if not api or not url:
-        return link
-        
+    if not api or not url: return link
     try:
         async with aiohttp.ClientSession() as session:
-            api_url = f"https://{url}/api?api={api}&url={link}"
+            api_url = f"https://{url}/api?api={api}&url={link}&format=text"
             async with session.get(api_url) as response:
-                data = await response.json()
-                if "shortenedUrl" in data:
-                    return data["shortenedUrl"]
+                if response.status == 200:
+                    res = await response.text()
+                    if "http" in res: return res
     except Exception as e:
         logger.error(f"Shortlink Failed: {e}")
     return link
@@ -167,13 +195,9 @@ async def get_shortlink(link, api=None, url=None):
 # 💎 PREMIUM CHECKER
 # ==============================================================================
 async def is_premium(user_id, client=None):
-    """Check if user has premium plan."""
-    if not IS_PREMIUM:
-        return False 
-        
+    if not IS_PREMIUM: return False 
     user = await db.get_user(user_id)
     if not user: return False
-    
     return user.get('status', {}).get('premium', False)
 
 # ==============================================================================
@@ -198,7 +222,7 @@ async def broadcast_messages(user_id, message):
         return False, "Error"
 
 # ==============================================================================
-# 👮 ADMIN & SUBSCRIPTION (FORCE SUB)
+# 👮 ADMIN & SUBSCRIPTION
 # ==============================================================================
 async def is_check_admin(client, chat_id, user_id):
     try:
@@ -208,13 +232,9 @@ async def is_check_admin(client, chat_id, user_id):
         return False
 
 async def is_subscribed(client, message):
-    # Fetch from DB Config first, fallback to ENV
     conf = await db.get_config()
     auth_channel = conf.get('auth_channel') or AUTH_CHANNEL
-    
-    if not auth_channel:
-        return False 
-        
+    if not auth_channel: return False 
     user_id = message.from_user.id
     try:
         user = await client.get_chat_member(int(auth_channel), user_id)
@@ -224,9 +244,8 @@ async def is_subscribed(client, message):
         pass 
     else:
         if user.status not in [enums.ChatMemberStatus.BANNED, enums.ChatMemberStatus.LEFT]:
-            return False # User IS subscribed (No need to show button)
+            return False 
     
-    # User needs to join
     try:
         chat = await client.get_chat(int(auth_channel))
         link = chat.invite_link or f"https://t.me/{chat.username}"
@@ -237,7 +256,7 @@ async def is_subscribed(client, message):
     return buttons
 
 # ==============================================================================
-# 🖼️ IMAGE UPLOADER (GRAPH.ORG)
+# 🖼️ IMAGE UPLOADER
 # ==============================================================================
 async def upload_image(path):
     try:
