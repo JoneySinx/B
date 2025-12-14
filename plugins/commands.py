@@ -13,7 +13,8 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from hydrogram.errors import MessageNotModified
 
 from Script import script
-from database.ia_filterdb import get_file_details, delete_all_filters # 🔥 ADDED delete_all_filters
+# 🔥 FIX: Only import get_file_details here to prevent plugin load issues
+from database.ia_filterdb import get_file_details 
 from database.users_chats_db import db
 from info import ADMINS, UPDATES_LINK, PICS, IS_STREAM, UPI_ID, UPI_NAME, RECEIPT_SEND_USERNAME, URL, DELETE_TIME
 from utils import (
@@ -370,7 +371,9 @@ async def purge_confirm_all_cmd_cb(client, query):
     await query.message.edit_text("<b>🗑️ Deleting all filters... Please wait.</b>", parse_mode=enums.ParseMode.HTML)
     
     try:
-        # Calls the function from database/ia_filterdb.py
+        # 🔥 FIX: Local import of the function to avoid plugin load error
+        from database.ia_filterdb import delete_all_filters 
+        
         count = await delete_all_filters()
         
         await query.message.edit_text(f"<b>✅ ALL Filters Deleted Successfully!</b>\n\n🗑️ Total {count} items removed.", parse_mode=enums.ParseMode.HTML)
@@ -380,5 +383,5 @@ async def purge_confirm_all_cmd_cb(client, query):
         except: pass
         
     except Exception as e:
-        logger.error(f"Error deleting all filters: {e}")
+        logger.error(f"Error during deletion: {e}")
         await query.message.edit_text(f"<b>❌ Error during deletion:</b> <code>{e}</code>", parse_mode=enums.ParseMode.HTML)
