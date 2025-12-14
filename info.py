@@ -1,3 +1,4 @@
+
 import re
 import os
 import logging
@@ -30,8 +31,11 @@ API_HASH = environ.get('API_HASH', '')
 BOT_TOKEN = environ.get('BOT_TOKEN', '')
 
 # 2. Database (Primary & Backup)
-DATABASE_URI = environ.get('DATA_DATABASE_URL', "") or environ.get('DATABASE_URI', "")
-BACKUP_DATABASE_URI = environ.get('BACKUP_DATABASE_URI', "") # Optional
+# Note: We define both names to prevent ImportErrors in other files
+DATA_DATABASE_URL = environ.get('DATA_DATABASE_URL', "") or environ.get('DATABASE_URI', "")
+DATABASE_URI = DATA_DATABASE_URL # Alias for new code
+BACKUP_DATABASE_URI = environ.get('BACKUP_DATABASE_URI', "") 
+
 DATABASE_NAME = environ.get('DATABASE_NAME', "FastFinder")
 COLLECTION_NAME = environ.get('COLLECTION_NAME', 'Files')
 
@@ -53,15 +57,13 @@ if not URL: logger.error('❌ URL (Server Link) is missing!')
 elif not URL.endswith("/"): URL += "/"
 
 # Safety Check
-if API_ID == 0 or not API_HASH or not BOT_TOKEN or not DATABASE_URI:
-    logger.error('❌ CRITICAL ERROR: API_ID, API_HASH, BOT_TOKEN, or DATABASE_URI is missing!')
+if API_ID == 0 or not API_HASH or not BOT_TOKEN or not DATA_DATABASE_URL:
+    logger.error('❌ CRITICAL ERROR: API_ID, API_HASH, BOT_TOKEN, or DATA_DATABASE_URL is missing!')
     exit(1)
 
 # ==============================================================================
 # 🎮 DYNAMIC FEATURES (MANAGED VIA ADMIN PANEL)
 # ==============================================================================
-# नोट: ये सब Default False हैं ताकि आप इन्हें Admin Panel से कंट्रोल कर सकें।
-# अगर आपको ENV से Force On करना है, तो Config में True सेट करें।
 
 # 1. Verification & Shortlinks (Ads)
 IS_VERIFY = is_enabled('IS_VERIFY', False)
@@ -72,7 +74,7 @@ VERIFY_TUTORIAL = environ.get("VERIFY_TUTORIAL", "")
 VERIFY_EXPIRE = int(environ.get("VERIFY_EXPIRE", 86400)) # 24 Hours
 
 # 2. Premium & Payments
-IS_PREMIUM = is_enabled('IS_PREMIUM', False) # Default False, Enable via DB/Env
+IS_PREMIUM = is_enabled('IS_PREMIUM', False) 
 PRE_DAY_AMOUNT = int(environ.get('PRE_DAY_AMOUNT', '10'))
 UPI_ID = environ.get("UPI_ID", "")
 UPI_NAME = environ.get("UPI_NAME", "FastFinder Payment")
@@ -80,18 +82,18 @@ RECEIPT_SEND_USERNAME = environ.get("RECEIPT_SEND_USERNAME", "")
 PAYMENT_QR = environ.get("PAYMENT_QR", "") 
 
 # 3. Security & Stream
-PROTECT_CONTENT = is_enabled('PROTECT_CONTENT', False) # Forwards Restricted?
-AUTO_DELETE = is_enabled('AUTO_DELETE', False) # Auto delete file from group?
-IS_STREAM = is_enabled('IS_STREAM', True) # Stream Link (Keep True mostly)
-DISABLE_CLONE = is_enabled('DISABLE_CLONE', False) # Allow users to clone?
+PROTECT_CONTENT = is_enabled('PROTECT_CONTENT', False) 
+AUTO_DELETE = is_enabled('AUTO_DELETE', False) 
+IS_STREAM = is_enabled('IS_STREAM', True) 
+DISABLE_CLONE = is_enabled('DISABLE_CLONE', False) 
 
 # ==============================================================================
 # ⚙️ ADVANCED CHANNELS & SETTINGS
 # ==============================================================================
 
 # Channels
-AUTH_CHANNEL = int(environ.get('AUTH_CHANNEL', '0')) # Force Sub
-DB_CHANNEL = int(environ.get('DB_CHANNEL', '0')) # Legacy
+AUTH_CHANNEL = int(environ.get('AUTH_CHANNEL', '0')) 
+DB_CHANNEL = int(environ.get('DB_CHANNEL', '0')) 
 SUPPORT_GROUP = [int(x) for x in environ.get('SUPPORT_GROUP', '').split() if x.lstrip('-').isdigit()]
 
 # Timers
@@ -127,7 +129,7 @@ STICKERS = environ.get('STICKERS', 'CAACAgIAAxkBAAEN4ctnu1NdZUe21tiqF1CjLCZW8rJ2
 LANGUAGES = [l.lower() for l in environ.get('LANGUAGES', 'hindi english telugu tamil kannada malayalam marathi').split()]
 QUALITY = [q.lower() for q in environ.get('QUALITY', '360p 480p 720p 1080p 1440p 2160p 4k').split()]
 
-# Legacy / Unused (Kept for compatibility)
+# Legacy
 IMDB = is_enabled('IMDB', False)
 LONG_IMDB_DESCRIPTION = is_enabled('LONG_IMDB_DESCRIPTION', False)
 IMDB_TEMPLATE = environ.get("IMDB_TEMPLATE", script.IMDB_TEMPLATE)
