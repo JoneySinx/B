@@ -3,10 +3,12 @@ import random
 import asyncio
 import logging
 import time
+import io
+import qrcode
 from datetime import datetime, timedelta
 
 from hydrogram import Client, filters, enums
-from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
+from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, Message
 from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait
 
 from Script import script
@@ -15,7 +17,8 @@ from database.users_chats_db import db
 from info import (
     IS_PREMIUM, PRE_DAY_AMOUNT, RECEIPT_SEND_USERNAME, URL, BIN_CHANNEL, 
     STICKERS, INDEX_CHANNELS, ADMINS, DELETE_TIME, 
-    UPDATES_LINK, LOG_CHANNEL, PICS, IS_STREAM, REACTIONS, PM_FILE_DELETE_TIME
+    UPDATES_LINK, LOG_CHANNEL, PICS, IS_STREAM, REACTIONS, PM_FILE_DELETE_TIME,
+    UPI_ID, UPI_NAME, PAYMENT_QR
 )
 from utils import (
     is_premium, upload_image, get_settings, get_size, is_subscribed, 
@@ -90,7 +93,8 @@ async def start(client, message):
         stored = await get_verify_status(message.from_user.id)
         
         if stored.get('token') == token:
-            await update_verify_status(message.from_user.id, is_verified=True, verified_at=time.time())
+            # Full Verify
+            await update_verify_status(message.from_user.id, is_verified=True, verified_time=time.time())
             await message.reply(f"<b>🎉 Verification Successful!</b>\n\n<i>You can now search files freely.</i>\n<i>Valid for: {int(conf.get('verify_duration', 86400)/3600)} Hours</i>")
             return
         else:
@@ -105,16 +109,24 @@ async def start(client, message):
         
         pics = conf.get('start_pics', PICS)
         if isinstance(pics, str): pics = [pics]
+        if not pics: pics = PICS # Fallback
         
         buttons = [
             [InlineKeyboardButton('👨‍🚒 Hᴇʟᴘ', callback_data='help'), InlineKeyboardButton('📊 Sᴛᴀᴛs', callback_data='stats')], 
-            [InlineKeyboardButton('💎 Gᴏ Pʀᴇᴍɪᴜᴍ', url=f"https://t.me/{temp.U_NAME}?start=premium")]
+            [InlineKeyboardButton('💎 Gᴏ Pʀᴇᴍɪᴜᴍ', callback_data="my_plan")]
         ]
-        await message.reply_photo(photo=random.choice(pics), caption=txt, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        
+        try:
+            await message.reply_photo(photo=random.choice(pics), caption=txt, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        except Exception:
+            await message.reply_text(text=txt, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML, disable_web_page_preview=True)
         return
 
     mc = message.command[1]
+    
+    # 🔥 HANDLE MISSING COMMANDS
     if mc == 'premium': return await plan(client, message)
+    if mc.startswith('ref_'): return await process_referral(client, message)
     
     # 7. SETTINGS SHORTCUT
     if mc.startswith('settings'):
@@ -127,11 +139,13 @@ async def start(client, message):
     btn = await is_subscribed(client, message)
     if btn:
         btn.append([InlineKeyboardButton("🔁 Try Again", callback_data=f"checksub#{mc}")])
-        await message.reply_photo(photo=random.choice(PICS), caption=f"<b>👋 Hello {message.from_user.mention},</b>\n\n<i>Please Join My Channel to use me!</i>", reply_markup=InlineKeyboardMarkup(btn))
+        try:
+            await message.reply_photo(photo=random.choice(PICS), caption=f"<b>👋 Hello {message.from_user.mention},</b>\n\n<i>Please Join My Channel to use me!</i>", reply_markup=InlineKeyboardMarkup(btn))
+        except:
+            await message.reply_text(f"<b>👋 Hello {message.from_user.mention},</b>\n\n<i>Please Join My Channel to use me!</i>", reply_markup=InlineKeyboardMarkup(btn))
         return 
     
     # 🔥 9. VERIFICATION CHECK (CRITICAL FIX FOR FILE LINKS)
-    # If user clicks file link, check verification status BEFORE serving file
     if conf.get('is_verify', False) and not await is_premium(message.from_user.id, client):
         is_verified = await check_verification(client, message.from_user.id)
         if not is_verified:
@@ -239,14 +253,14 @@ async def admin_panel(client, message):
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 # ==============================================================================
-# 🛠️ DIRECT ADMIN UTILITY COMMANDS (NEW)
+# 🛠️ DIRECT ADMIN UTILITY COMMANDS
 # ==============================================================================
 
 @Client.on_message(filters.command("ban") & filters.user(ADMINS))
 async def ban_user_cmd(bot, message):
     try:
         user_id = int(message.command[1])
-        await db.add_banned_user(user_id) # Ensure this exists in users_chats_db
+        await db.add_banned_user(user_id)
         temp.BANNED_USERS.append(user_id)
         await message.reply(f"<b>🚫 User {user_id} Banned!</b>")
     except: await message.reply("Usage: `/ban [User ID]`")
@@ -280,8 +294,10 @@ async def broadcast_cmd(bot, message):
         return await message.reply("<b>⚠️ Reply to a message to broadcast!</b>")
     
     await message.reply("<b>🚀 Broadcasting...</b>")
-    from plugins.pm_filter import run_broadcast
-    asyncio.create_task(run_broadcast(bot, message.reply_to_message, message.from_user.id))
+    from plugins.broadcast import broadcast_handler 
+    # Use the detailed handler from plugins/broadcast.py, triggering command logic manually if needed
+    # Or simplified logic:
+    await broadcast_handler(bot, message)
 
 # ==============================================================================
 # 🗑️ SMART DELETE
@@ -369,9 +385,9 @@ async def purge_zombies(bot, message):
     deleted = 0
     async for user in users:
         try:
-            await bot.get_chat(user['_id'])
+            await bot.get_chat(user['id'])
         except:
-            await db.delete_user(user['_id'])
+            await db.delete_user(user['id'])
             deleted += 1
     await msg.edit(f"<b>✅ Purge Complete!</b>\nRemoved {deleted} Zombie Users.")
 
@@ -396,94 +412,109 @@ async def stats(bot, message):
     )
     await message.reply_text(text)
 
-# --- UTILITY COMMANDS (LINK/IMG/PLAN) ---
+# ==============================================================================
+# 🔗 UTILITY COMMANDS (LINK / PLAN / REF / CLONE) - 🔥 FIXED
+# ==============================================================================
+
 @Client.on_message(filters.command('link'))
 async def link(bot, message):
     msg = message.reply_to_message
     if not msg: return await message.reply('<b>Reply to a File!</b>')
     try:
         media = getattr(msg, msg.media.value)
-        msg = await bot.send_cached_media(chat_id=BIN_CHANNEL, file_id=media.file_id)
-        from info import URL as SITE_URL
-        base_url = SITE_URL[:-1] if SITE_URL.endswith('/') else SITE_URL
-        watch = f"{base_url}/watch/{msg.id}"
-        download = f"{base_url}/download/{msg.id}"
-        btn=[[InlineKeyboardButton("🎬 Wᴀᴛᴄʜ", url=watch), InlineKeyboardButton("⚡ Dᴏᴡɴʟᴏᴀᴅ", url=download)],[InlineKeyboardButton('❌ Cʟᴏsᴇ', callback_data='close_data')]]
-        await message.reply(f'<b>🔗 Link Generated!</b>', reply_markup=InlineKeyboardMarkup(btn))
-    except Exception as e: await message.reply(f'Error: {e}')
-
-@Client.on_message(filters.command('img_2_link'))
-async def img_2_link(bot, message):
-    reply = message.reply_to_message
-    if not reply or not reply.photo: return await message.reply('<b>Reply to an Image!</b>')
-    path = await reply.download()
-    url = await upload_image(path)
-    os.remove(path)
-    await message.reply(f"<b>✅ Image Uploaded:</b>\n<code>{url}</code>")
-
-@Client.on_message(filters.command('plan') & filters.private)
-async def plan(client, message):
-    btn = [[InlineKeyboardButton('💳 Bᴜʏ Pʀᴇᴍɪᴜᴍ Nᴏᴡ', callback_data='activate_plan')]]
-    conf = await db.get_config()
-    amt = conf.get('pay_amount', PRE_DAY_AMOUNT)
-    rec = conf.get('receipt_user', RECEIPT_SEND_USERNAME)
-    await message.reply(script.PLAN_TXT.format(amt, rec), reply_markup=InlineKeyboardMarkup(btn))
-
-@Client.on_message(filters.command('myplan') & filters.private)
-async def myplan(client, message):
-    mp = await db.get_plan(message.from_user.id)
-    if not await is_premium(message.from_user.id, client):
-        return await message.reply("<b>❌ No Active Plan!</b>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('💳 Upgrade', callback_data='activate_plan')]]))
-    
-    ex = mp.get('expire')
-    date = ex.strftime("%d/%m/%Y") if isinstance(ex, datetime) else "Unlimited"
-    await message.reply(f"<b>💎 VIP Member</b>\n\nUser: {message.from_user.mention}\nExpires: {date}")
-
-@Client.on_message(filters.command('add_prm') & filters.user(ADMINS))
-async def add_prm(bot, message):
-    try: _, user_id, d = message.text.split(' ')
-    except: return await message.reply('Usage: `/add_prm [ID] [Days]`')
-    d = int(d)
-    user = await bot.get_users(user_id)
-    mp = await db.get_plan(user.id)
-    mp['expire'] = datetime.now() + timedelta(days=d)
-    mp['premium'] = True
-    await db.update_plan(user.id, mp)
-    await message.reply(f"✅ Premium added for {d} days.")
-    await bot.send_message(user.id, f"🎉 <b>Premium Activated for {d} Days!</b>")
-
-@Client.on_message(filters.command('rm_prm') & filters.user(ADMINS))
-async def rm_prm(bot, message):
-    try: _, user_id = message.text.split(' ')
-    except: return await message.reply('Usage: `/rm_prm [ID]`')
-    user = await bot.get_users(user_id)
-    await db.update_plan(user.id, {'expire': None, 'premium': False})
-    await message.reply("✅ Premium Removed.")
-
-@Client.on_message(filters.command('prm_list') & filters.user(ADMINS))
-async def prm_list(bot, message):
-    tx = await message.reply('<b>🔄 Fᴇᴛᴄʜɪɴɢ Dᴀᴛᴀ...</b>')
-    out = "<b>💎 <u>Pʀᴇᴍɪᴜᴍ Usᴇʀs Lɪsᴛ</u></b>\n\n"
-    count = 0
-    async for user in await db.get_premium_users():
-        if user['status']['premium']:
-            count += 1
-            try: u = await bot.get_users(user['id']); mention = u.mention
-            except: mention = "Unknown"
-            expiry = user['status']['expire']
-            exp_str = expiry.strftime("%d/%m/%Y") if isinstance(expiry, datetime) else "Unlimited"
-            out += f"<b>{count}.</b> {mention} (`{user['id']}`) | ⏳ {exp_str}\n"
+        # Assuming you have a route like /watch/{id} set up in web/route.py
+        # You might need to forward to BIN_CHANNEL to get a permanent ID if not public
+        if BIN_CHANNEL:
+            try:
+                msg = await msg.copy(BIN_CHANNEL)
+            except: pass # If failed, uses original
             
-    if count == 0: await tx.edit_text("<b>❌ No Premium Users.</b>")
-    else:
-        try: await tx.edit_text(out)
-        except MessageTooLong:
-            with open('premium_users.txt', 'w+') as f: f.write(out.replace('<b>', '').replace('</b>', '').replace('`', ''))
-            await message.reply_document('premium_users.txt', caption="💎 Premium Users List")
+        online = f"{URL}watch/{msg.id}"
+        download = f"{URL}download/{msg.id}"
+        
+        await message.reply_text(
+            f"<b>🔗 Link Generated!</b>\n\n<b>📺 Watch:</b> {online}\n<b>📥 Download:</b> {download}",
+            quote=True,
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        await message.reply(f"❌ Error: {e}")
 
-@Client.on_message(filters.command('ping'))
-async def ping(client, message):
-    start_time = time.time()
-    msg = await message.reply("🏓")
-    end_time = time.time()
-    await msg.edit(f'<b>🏓 Pong!</b> <code>{round((end_time - start_time) * 1000)} ms</code>')
+@Client.on_message(filters.command(["plan", "premium"]))
+async def plan(client, message):
+    user_id = message.from_user.id
+    user = await db.get_user(user_id)
+    status = user.get('status', {})
+    
+    is_prem = status.get('premium', False)
+    expiry = status.get('expire', 'Never')
+    
+    # 🖼️ GENERATE QR CODE FOR PAYMENT
+    # Using UPI_ID from info.py
+    if UPI_ID:
+        upi_url = f"upi://pay?pa={UPI_ID}&pn={UPI_NAME}&cu=INR"
+        qr = qrcode.make(upi_url)
+        bio = io.BytesIO()
+        qr.save(bio)
+        bio.seek(0)
+        
+        caption = (
+            f"<b>💎 PREMIUM PLANS</b>\n\n"
+            f"<b>👤 User:</b> {message.from_user.mention}\n"
+            f"<b>📊 Status:</b> {'✅ Premium' if is_prem else '❌ Free'}\n"
+            f"<b>⏳ Expires:</b> {expiry}\n\n"
+            f"<b>💸 Pricing:</b>\n"
+            f"• 1 Month: ₹30\n"
+            f"• 1 Year: ₹200\n\n"
+            f"<i>Scan QR to pay and send screenshot to Admin.</i>"
+        )
+        
+        btn = [[InlineKeyboardButton("📤 Send Screenshot", url=f"https://t.me/{RECEIPT_SEND_USERNAME}")]]
+        await message.reply_photo(photo=bio, caption=caption, reply_markup=InlineKeyboardMarkup(btn))
+    else:
+        await message.reply("❌ Payment details not configured by Admin.")
+
+@Client.on_message(filters.command("referral"))
+async def referral(client, message):
+    user_id = message.from_user.id
+    link = f"https://t.me/{temp.U_NAME}?start=ref_{user_id}"
+    
+    balance = await db.get_balance(user_id)
+    conf = await db.get_config()
+    points = conf.get('points_per_referral', 10)
+    
+    text = (
+        f"<b>💰 REFERRAL SYSTEM</b>\n\n"
+        f"<b>🔗 Link:</b> {link}\n\n"
+        f"<b>💵 Your Points:</b> {balance}\n"
+        f"<b>🎁 Per Refer:</b> {points} Points\n\n"
+        f"<i>Collect points to redeem Premium!</i>"
+    )
+    
+    btn = [[InlineKeyboardButton("📤 Share Link", url=f"https://t.me/share/url?url={link}&text=Join%20this%20awesome%20bot!")]]
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(btn))
+
+async def process_referral(client, message):
+    try:
+        ref_by = int(message.command[1].split("_")[1])
+        if ref_by == message.from_user.id: return # Cannot refer self
+        
+        if not await db.is_user_exist(message.from_user.id):
+            conf = await db.get_config()
+            points = conf.get('points_per_referral', 10)
+            
+            await db.inc_balance(ref_by, points)
+            try:
+                await client.send_message(ref_by, f"<b>🎉 New Referral!</b>\n\n{message.from_user.mention} joined using your link.\n<b>➕ Added:</b> {points} Points")
+            except: pass
+    except: pass
+
+@Client.on_message(filters.command("clone"))
+async def clone_bot(client, message):
+    await message.reply(
+        "<b>🤖 CLONE BOT CREATOR</b>\n\n"
+        "1. Create a bot in @BotFather\n"
+        "2. Get the <b>Bot Token</b>\n"
+        "3. Send the token here.\n\n"
+        "<i>Feature coming soon in V2 UI...</i>"
+    )
