@@ -216,17 +216,29 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot, skip, target_db):
                     unsupported += 1
                     continue
                 
+                # 🔥 FIX 1: Ensure file_ref exists to prevent crash in ia_filterdb.py
+                # This ensures the required attribute is present, even if None
+                if not hasattr(media, 'file_ref') or not media.file_ref:
+                    media.file_ref = None 
+                    
+                # 🔥 FIX 2: Ensure file_name exists (Crucial for Videos/Audios without explicit filename)
+                if not hasattr(media, 'file_name') or not media.file_name:
+                    media.file_name = f"Unknown_File_{message.id}"
+                    
+                
                 media.file_type = message.media.value
                 media.caption = message.caption
                 
-                # 🔥 PASS TARGET DB TO SAVE_FILE
+                # PASS TARGET DB TO SAVE_FILE
+                # ia_filterdb.py's save_file expects a media object with attributes file_ref, file_name etc.
                 sts = await save_file(media, target_db=target_db) 
                 
-                if sts == 'suc':
+                # Note: save_file in ia_filterdb.py returns list of strings (e.g., ['primary', 'backup_dup'])
+                if 'primary' in sts or 'backup' in sts:
                     total_files += 1
-                elif sts == 'dup':
+                elif 'dup' in sts:
                     duplicate += 1
-                elif sts == 'err':
+                elif not sts: # Assuming empty list means error
                     errors += 1
                     
         except Exception as e:
