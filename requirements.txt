@@ -6,7 +6,7 @@ TgCrypto            # MTProto Speed Booster
 motor               # Async MongoDB Driver
 pymongo             # Standard MongoDB Driver
 umongo              # ODM for Schemas
-marshmallow         # Data validation
+marshmallow<3.13.0  # 🔥 FIXED: Version locked to prevent crash!
 dnspython           # DNS toolkit
 
 # --- 🌍 Web Server & Networking ---
