@@ -2,11 +2,12 @@ import logging
 import re
 import asyncio
 from struct import pack
-# 🔥 FIXED: Changed 'pyrogram' to 'hydrogram' to prevent ModuleNotFoundError
 from hydrogram.file_id import FileId
 from pymongo.errors import DuplicateKeyError
 from pymongo import TEXT
-from umongo import Instance, Document, fields
+# 🔥 FIX: Specific Import for Motor AsyncIO to fix "Abstract Method" error
+from umongo.frameworks.motor_asyncio import MotorAsyncIOInstance as Instance
+from umongo import Document, fields
 from motor.motor_asyncio import AsyncIOMotorClient
 from marshmallow.exceptions import ValidationError
 from info import DATABASE_URI, BACKUP_DATABASE_URI, DATABASE_NAME, COLLECTION_NAME, USE_CAPTION_FILTER
@@ -24,7 +25,6 @@ db = client[DATABASE_NAME]
 instance = Instance(db)
 
 # 2. Secondary Engine (Backup - Optional)
-# If Backup URI is provided, we connect to it. Otherwise, we simulate backup within same DB.
 if BACKUP_DATABASE_URI:
     client_bak = AsyncIOMotorClient(BACKUP_DATABASE_URI)
     db_bak = client_bak[DATABASE_NAME]
@@ -95,7 +95,6 @@ async def create_indexes():
     try:
         await Media.ensure_indexes()
         await MediaBackup.ensure_indexes()
-        # logger.info("✅ Database Indexes Created Successfully!")
     except Exception as e:
         logger.error(f"❌ Failed to create indexes: {e}")
 
