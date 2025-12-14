@@ -19,10 +19,10 @@ class Database:
         self.notes = self.db.notes           # For Saved Notes
         self.filters = self.db.filters       # For Custom Filters
         
-        # 🔥 NEW: Configuration Collection for Admin Panel
+        # 🔥 Configuration Collection
         self.conf = self.db.bot_settings
         
-        # 🔥 NEW: Clone Collection
+        # 🔥 Clone Collection
         self.clones = self.db.clones
 
     # ==========================================================================
@@ -62,31 +62,20 @@ class Database:
         return config
 
     async def update_config(self, key, value):
-        """
-        Updates a specific setting in the config.
-        """
         await self.conf.update_one(
             {'_id': 'main_config'},
             {'$set': {key: value}},
             upsert=True
         )
 
-    async def get_index_channels_db(self):
-        """
-        Returns list of indexed channels stored in DB (Dynamic Adding).
-        """
-        # For now, we rely on ENV, but this allows future expansion via /index command logic if needed
-        # Or we can store specific channel list in config
-        conf = await self.get_config()
-        return conf.get('db_index_channels', [])
-
     # ==========================================================================
-    # 👤 USER MANAGEMENT
+    # 👤 USER MANAGEMENT (🔥 FIXED CRASH HERE)
     # ==========================================================================
 
-    async def new_user(self, id):
+    async def new_user(self, id, name):
         return {
             'id': id,
+            'name': name, # Added Name Field
             'join_date': datetime.datetime.now().date(),
             'ban_status': {
                 'is_banned': False,
@@ -94,8 +83,9 @@ class Database:
             }
         }
 
-    async def add_user(self, id):
-        user = await self.new_user(id)
+    # 🔥 FIX: Added 'name' parameter to prevent TypeError
+    async def add_user(self, id, name):
+        user = await self.new_user(id, name)
         if not await self.is_user_exist(id):
             await self.col.insert_one(user)
 
@@ -111,9 +101,12 @@ class Database:
 
     async def delete_user(self, user_id):
         await self.col.delete_many({'id': int(user_id)})
+        
+    async def get_user(self, id):
+        return await self.col.find_one({'id': int(id)})
 
     # ==========================================================================
-    # 🏘️ GROUP MANAGEMENT & SETTINGS
+    # 🏘️ GROUP MANAGEMENT
     # ==========================================================================
 
     async def add_chat(self, chat, title):
@@ -140,15 +133,10 @@ class Database:
         chat = await self.get_chat(chat_id)
         if chat:
             return chat.get('settings', {})
-        # Return defaults if chat not found (rare)
         return {'auto_filter': True, 'spell_check': True, 'welcome': True}
 
     async def update_settings(self, chat_id, settings):
         await self.grp.update_one({'id': int(chat_id)}, {'$set': {'settings': settings}})
-        
-    async def get_bot_sttgs(self):
-        # Legacy support call
-        return {'AUTO_FILTER': True}
 
     async def total_chat_count(self):
         return await self.grp.count_documents({})
@@ -157,11 +145,10 @@ class Database:
         return self.grp.find({})
 
     # ==========================================================================
-    # 🚫 BAN MANAGEMENT (USERS & CHATS)
+    # 🚫 BAN MANAGEMENT
     # ==========================================================================
 
     async def add_banned_user(self, id, reason="Violated Rules"):
-        # Add to simple banned list and update user profile
         await self.ban.update_one({'id': int(id)}, {'$set': {'id': int(id), 'reason': reason}}, upsert=True)
         await self.col.update_one({'id': int(id)}, {'$set': {'ban_status.is_banned': True, 'ban_status.ban_reason': reason}})
 
@@ -169,12 +156,9 @@ class Database:
         await self.ban.delete_one({'id': int(id)})
         await self.col.update_one({'id': int(id)}, {'$set': {'ban_status.is_banned': False}})
 
-    async def get_ban_status(self, id):
-        return await self.ban.find_one({'id': int(id)})
-
     async def get_banned(self):
         users = [b['id'] async for b in self.ban.find({})]
-        return users, [] # Returning empty list for chats for now
+        return users, [] 
 
     # ==========================================================================
     # 💎 PREMIUM MANAGEMENT
@@ -186,7 +170,6 @@ class Database:
         return user.get('status', {})
 
     async def update_plan(self, user_id, data):
-        # data: {'expire': datetime, 'premium': True, ...}
         await self.prm.update_one(
             {'id': int(user_id)},
             {'$set': {'id': int(user_id), 'status': data}},
@@ -194,30 +177,28 @@ class Database:
         )
 
     async def get_premium_users(self):
-        # Returns cursor
         return self.prm.find({'status.premium': True})
-    
-    async def get_premium_count(self):
-        return await self.prm.count_documents({'status.premium': True})
 
     # ==========================================================================
-    # 🔐 VERIFICATION STATUS
+    # 🔐 VERIFICATION STATUS (🔥 FIXED ARGS)
     # ==========================================================================
     
     async def get_verify_status(self, user_id):
         status = await self.verify.find_one({'id': int(user_id)})
         if not status:
-            return {'is_verified': False, 'verified_time': 0, 'token': None}
+            return {'is_verified': False, 'verified_time': 0, 'token': None, 'expire': 0}
         return status
 
-    async def update_verify_status(self, user_id, verify_token="", is_verified=False, verified_time=0):
+    # 🔥 FIX: Added 'expire' to match utils.py call
+    async def update_verify_status(self, user_id, verify_token="", is_verified=False, verified_time=0, expire=0):
         await self.verify.update_one(
             {'id': int(user_id)},
             {'$set': {
                 'id': int(user_id),
                 'token': verify_token,
                 'is_verified': is_verified,
-                'verified_time': verified_time
+                'verified_time': verified_time,
+                'expire': expire
             }},
             upsert=True
         )
@@ -268,17 +249,6 @@ class Database:
 
     async def delete_all_filters(self, chat_id):
         await self.filters.delete_many({'chat_id': chat_id})
-
-    # ==========================================================================
-    # 💾 DB SIZE UTILS
-    # ==========================================================================
-    
-    async def get_db_size(self):
-        try:
-            stats = await self.db.command("dbstats")
-            return stats['dataSize'], stats['storageSize']
-        except:
-            return 0, 0
 
 # Initialize Database
 db = Database(DATA_DATABASE_URL, DATABASE_NAME)
