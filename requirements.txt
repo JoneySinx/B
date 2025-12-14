@@ -1,28 +1,28 @@
 # --- 🤖 Core Telegram Library ---
-hydrogram>=1.1.5    # The main bot framework (Fork of Pyrogram)
-TgCrypto            # MTProto Speed Booster (C-based crypto)
+hydrogram           # The main bot framework
+TgCrypto            # MTProto Speed Booster
 
 # --- 🗄️ Database (Dual DB Engine) ---
 motor               # Async MongoDB Driver
 pymongo             # Standard MongoDB Driver
-umongo              # ODM for Schemas (Used in ia_filterdb.py)
-marshmallow         # Data validation (Required by umongo)
-dnspython           # DNS toolkit for MongoDB Atlas (srv:// links)
+umongo              # ODM for Schemas
+marshmallow         # Data validation
+dnspython           # DNS toolkit
 
 # --- 🌍 Web Server & Networking ---
 aiohttp             # Async Web Server & HTTP Client
-aiofiles            # Async File I/O (Faster file handling)
-requests            # Synchronous HTTP calls (Backup)
+aiofiles            # Async File I/O
+requests            # Synchronous HTTP calls
 
 # --- 🚀 Performance Boosters ---
-uvloop              # Ultra fast event loop (Makes Python 2x-4x faster)
+uvloop              # Ultra fast event loop
 ujson               # Ultra fast JSON parser
 
 # --- 🖼️ Media & Utilities ---
-Pillow              # Image Processing (Thumbnails/Screenshots)
-beautifulsoup4      # HTML Parsing (For scraping/metadata)
-pytz                # Timezone Handling (IST/UTC)
+Pillow              # Image Processing
+beautifulsoup4      # HTML Parsing
+pytz                # Timezone Handling
 python-dotenv       # Loading .env files locally
 
 # --- 🛠️ Extras ---
-apscheduler         # Background tasks (Optional but good to have)
+apscheduler         # Background tasks
