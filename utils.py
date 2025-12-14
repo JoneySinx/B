@@ -5,12 +5,14 @@ import asyncio
 import time
 import math
 import pytz
+import base64
 import aiohttp
 from datetime import datetime, timezone, timedelta
 from info import (
     LOG_CHANNEL, API_ID, API_HASH, BOT_TOKEN, 
     ADMINS, IS_PREMIUM, PRE_DAY_AMOUNT, PICS, 
-    UPI_ID, UPI_NAME
+    UPI_ID, UPI_NAME, IS_VERIFY, VERIFY_EXPIRE,
+    AUTH_CHANNEL
 )
 from hydrogram import enums
 from hydrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -24,34 +26,27 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 class temp(object):
     START_TIME = 0
-    U_NAME = None   # Bot Username
-    B_NAME = None   # Bot Name
-    B_LINK = None   # Bot Link
-    B_ID = None     # Bot ID
-    BOT = None      # Client Instance
-    
-    FILES = {}      # Search Results Cache
-    SETTINGS = {}   # Group Settings Cache
-    
-    # 🔥 DYNAMIC CONFIG CACHE (Reduced DB Calls)
+    U_NAME = None
+    B_NAME = None
+    B_LINK = None
+    B_ID = None
+    BOT = None
+    FILES = {}      
+    SETTINGS = {}   
     CONFIG = {}     
-    
     CANCEL = False 
     CANCEL_BROADCAST = False
     MAINTENANCE = False
-    
     BANNED_USERS = []
     BANNED_CHATS = []
     PREMIUM_REMINDERS = {} 
-    
-    BROADCAST_MSG = None # For Broadcast Command
+    BROADCAST_MSG = None 
     BROADCAST_SETTINGS = {}
 
 # ==============================================================================
 # ⚙️ GROUP SETTINGS MANAGER
 # ==============================================================================
 async def get_settings(group_id):
-    # Memory Cache Check
     settings = temp.SETTINGS.get(group_id)
     if not settings:
         settings = await db.get_settings(group_id)
@@ -68,15 +63,12 @@ async def save_group_settings(group_id, key, value):
 # 🛠️ GLOBAL BOT CONFIG LOADER
 # ==============================================================================
 async def load_temp_config():
-    """
-    Load dynamic settings from DB to Memory on Startup
-    """
     conf = await db.get_config()
     temp.CONFIG = conf
     temp.MAINTENANCE = conf.get('is_maintenance', False)
 
 # ==============================================================================
-# ⏱️ TIME FORMATTER
+# ⏱️ TIME & SIZE FORMATTERS
 # ==============================================================================
 def get_readable_time(seconds: int) -> str:
     count = 0
@@ -98,9 +90,6 @@ def get_readable_time(seconds: int) -> str:
     ping_time += ":".join(time_list)
     return ping_time
 
-# ==============================================================================
-# 📦 SIZE FORMATTER
-# ==============================================================================
 def get_size(bytes, suffix="B"):
     factor = 1024
     for unit in ["", "K", "M", "G", "T", "P"]:
@@ -109,7 +98,86 @@ def get_size(bytes, suffix="B"):
         bytes /= factor
 
 # ==============================================================================
-# 📢 BROADCAST ENGINE
+# 🔐 ENCODING / DECODING (DEEP LINKING)
+# ==============================================================================
+async def decode(base64_string):
+    try:
+        base64_bytes = base64_string.encode("ascii")
+        string_bytes = base64.b64decode(base64_bytes) 
+        string = string_bytes.decode("ascii")
+        return string
+    except:
+        return base64_string
+
+async def encode(string):
+    try:
+        string_bytes = string.encode("ascii")
+        base64_bytes = base64.b64encode(string_bytes)
+        base64_string = base64_bytes.decode("ascii")
+        return base64_string
+    except:
+        return string
+
+# ==============================================================================
+# 🔐 VERIFICATION SYSTEM
+# ==============================================================================
+async def get_verify_status(user_id):
+    """
+    Check if user is verified.
+    Returns: True (Verified/Disabled) | False (Need Verify)
+    """
+    if not IS_VERIFY:
+        return True
+        
+    user = await db.get_user(user_id)
+    if not user:
+        return False
+        
+    verify_status = user.get('verify_status', {})
+    expire_date = verify_status.get('expire', 0)
+    
+    if expire_date > time.time():
+        return True
+    
+    return False
+
+async def update_verify_status(user_id, verify_token="", is_verified=False):
+    """Grant verification to user."""
+    expire_time = time.time() + VERIFY_EXPIRE
+    await db.update_verify_status(user_id, expire_time)
+    return True
+
+async def get_shortlink(link, api=None, url=None):
+    """Generate Shortlink using API."""
+    if not api or not url:
+        return link
+        
+    try:
+        async with aiohttp.ClientSession() as session:
+            api_url = f"https://{url}/api?api={api}&url={link}"
+            async with session.get(api_url) as response:
+                data = await response.json()
+                if "shortenedUrl" in data:
+                    return data["shortenedUrl"]
+    except Exception as e:
+        logger.error(f"Shortlink Failed: {e}")
+    return link
+
+# ==============================================================================
+# 💎 PREMIUM CHECKER
+# ==============================================================================
+async def is_premium(user_id, client=None):
+    """Check if user has premium plan."""
+    if not IS_PREMIUM:
+        return False 
+        
+    user = await db.get_user(user_id)
+    if not user: return False
+    
+    return user.get('status', {}).get('premium', False)
+
+# ==============================================================================
+# 📢 BROADCAST UTILS
 # ==============================================================================
 async def broadcast_messages(user_id, message):
     try:
@@ -120,29 +188,17 @@ async def broadcast_messages(user_id, message):
         return await broadcast_messages(user_id, message)
     except InputUserDeactivated:
         await db.delete_user(int(user_id))
-        logging.info(f"{user_id} - Removed (Deleted Account).")
         return False, "Deleted"
     except UserIsBlocked:
-        logging.info(f"{user_id} - Blocked the bot.")
         return False, "Blocked"
     except PeerIdInvalid:
         await db.delete_user(int(user_id))
         return False, "Error"
-    except Exception as e:
-        return False, "Error"
-
-async def groups_broadcast_messages(chat_id, message):
-    try:
-        await message.copy(chat_id=chat_id)
-        return True, "Success"
-    except FloodWait as e:
-        await asyncio.sleep(e.value)
-        return await groups_broadcast_messages(chat_id, message)
-    except Exception as e:
+    except Exception:
         return False, "Error"
 
 # ==============================================================================
-# 👮 ADMIN CHECKER
+# 👮 ADMIN & SUBSCRIPTION (FORCE SUB)
 # ==============================================================================
 async def is_check_admin(client, chat_id, user_id):
     try:
@@ -151,66 +207,34 @@ async def is_check_admin(client, chat_id, user_id):
     except:
         return False
 
-# ==============================================================================
-# 🔐 SUBSCRIPTION CHECKER (DYNAMIC)
-# ==============================================================================
 async def is_subscribed(client, message):
     # Fetch from DB Config first, fallback to ENV
     conf = await db.get_config()
-    auth_channel = conf.get('auth_channel')
+    auth_channel = conf.get('auth_channel') or AUTH_CHANNEL
     
     if not auth_channel:
-        return False # No channel set
+        return False 
         
     user_id = message.from_user.id
-    
     try:
         user = await client.get_chat_member(int(auth_channel), user_id)
     except UserIsBlocked:
-        return False # Bot blocked by user
+        return False
     except Exception:
-        pass # User not in channel (Err raised)
+        pass 
     else:
         if user.status not in [enums.ChatMemberStatus.BANNED, enums.ChatMemberStatus.LEFT]:
-            return False # User is present (False means NO BUTTON needed)
+            return False # User IS subscribed (No need to show button)
     
-    # If we reached here, User is NOT subscribed
+    # User needs to join
     try:
         chat = await client.get_chat(int(auth_channel))
         link = chat.invite_link or f"https://t.me/{chat.username}"
     except Exception:
-        return False # Bot is not admin in Auth Channel
+        return False 
 
     buttons = [[InlineKeyboardButton(f"🔥 Join {chat.title}", url=link)]]
     return buttons
-
-# ==============================================================================
-# 💎 PREMIUM CHECKER
-# ==============================================================================
-async def is_premium(user_id, client):
-    conf = await db.get_config()
-    if not conf.get('is_premium_active', True):
-        return True 
-    
-    if user_id in ADMINS:
-        return True
-        
-    user = await db.get_plan(user_id)
-    if user.get('premium'):
-        expire_date = user.get('expire')
-        if expire_date and isinstance(expire_date, datetime):
-            if expire_date.tzinfo is None:
-                expire_date = expire_date.replace(tzinfo=timezone.utc)
-            
-            if datetime.now(timezone.utc) < expire_date:
-                return True
-            else:
-                await db.update_plan(user_id, {'expire': '', 'trial': False, 'plan': '', 'premium': False})
-                try: await client.send_message(user_id, "<b>⚠️ Your Premium Plan has Expired!</b>\nUse /plan to renew.")
-                except: pass
-                return False
-        return True 
-    return False
 
 # ==============================================================================
 # 🖼️ IMAGE UPLOADER (GRAPH.ORG)
@@ -228,87 +252,12 @@ async def upload_image(path):
         return None
 
 # ==============================================================================
-# 👋 WISHES & GREETINGS
+# 👋 GREETINGS
 # ==============================================================================
 def get_wish():
     now = datetime.now(pytz.timezone("Asia/Kolkata"))
-    t = now.strftime("%H")
-    hour = int(t)
-    if 0 <= hour < 12: return "Good Morning ☀️"
-    elif 12 <= hour < 17: return "Good Afternoon 🌤"
-    elif 17 <= hour < 21: return "Good Evening 🌆"
+    t = int(now.strftime("%H"))
+    if 0 <= t < 12: return "Good Morning ☀️"
+    elif 12 <= t < 17: return "Good Afternoon 🌤"
+    elif 17 <= t < 21: return "Good Evening 🌆"
     else: return "Good Night 🌙"
-
-# ==============================================================================
-# 🔗 SHORTLINK & VERIFICATION UTILS
-# ==============================================================================
-async def get_shortlink(link):
-    """
-    Converts a link to Shortlink (Monetization)
-    """
-    conf = await db.get_config()
-    if not conf.get('shortlink_enable'): return link
-    
-    api = conf.get('shortlink_api')
-    site = conf.get('shortlink_site')
-    
-    if not api or not site: return link
-        
-    url = f"https://{site}/api?api={api}&url={link}&format=text"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
-                if response.status == 200:
-                    res = await response.text()
-                    if "http" in res: return res
-    except Exception as e:
-        logger.error(f"Shortlink Error: {e}")
-        
-    return link
-
-async def check_verification(client, user_id):
-    """
-    Checks if user has valid verification token
-    """
-    conf = await db.get_config()
-    if not conf.get('is_verify', False): return True
-    
-    user_status = await db.get_verify_status(user_id)
-    if not user_status['is_verified']: return False
-    
-    # Check Expiry
-    verified_time = user_status.get('verified_time') # Timestamp
-    duration = conf.get('verify_duration', 86400) # Default 24h
-    
-    if time.time() - verified_time < duration:
-        return True
-    else:
-        await update_verify_status(user_id, is_verified=False)
-        return False
-
-async def get_verify_short_link(link):
-    """
-    Generates shortlink for verification flow
-    """
-    conf = await db.get_config()
-    api = conf.get('shortlink_api')
-    site = conf.get('shortlink_site')
-    
-    if not api or not site: return link
-    
-    url = f"https://{site}/api?api={api}&url={link}&format=text"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
-                if response.status == 200:
-                    res = await response.text()
-                    if "http" in res: return res
-    except: pass
-    return link
-
-async def update_verify_status(user_id, verify_token="", is_verified=False):
-    """
-    Updates DB verification status
-    """
-    now = time.time()
-    await db.update_verify_status(user_id, verify_token, is_verified, now)
