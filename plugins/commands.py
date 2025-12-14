@@ -16,7 +16,7 @@ except ImportError:
 
 from hydrogram import Client, filters, enums
 from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions, CallbackQuery, Message
-from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait
+from hydrogram.errors import MessageTooLong, ChatAdminRequired, FloodWait, MessageNotModified
 
 from Script import script
 from database.ia_filterdb import db_count_documents, delete_files, get_file_details
@@ -48,142 +48,55 @@ async def get_grp_stg(group_id):
     return btn
 
 # ==============================================================================
-# 🎮 UNIVERSAL CALLBACK HANDLER
+# 🎮 UNIVERSAL CALLBACK HANDLER (USER SIDE)
 # ==============================================================================
-@Client.on_callback_query()
-async def cb_handler(client, query):
+@Client.on_callback_query(filters.regex(r"^(home_cb|help|close_data|my_plan|buy_premium|help_)"))
+async def user_cb_handler(client, query):
     data = query.data
-    user_id = query.from_user.id
-    
-    # --- COMMON BUTTONS ---
-    if data == "close_data":
-        await query.message.delete()
-        
-    elif data == "home_cb":
-        await start(client, query.message, is_cb=True)
-
-    elif data == "help":
-        text = script.HELP_TXT
-        buttons = [
-            [InlineKeyboardButton('👤 User', callback_data='help_user'), InlineKeyboardButton('🤖 Clone', callback_data='help_clone')],
-            [InlineKeyboardButton('👮 Admin', callback_data='help_admin')],
-            [InlineKeyboardButton('🏠 Home', callback_data='home_cb')]
-        ]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-    elif data == "help_user":
-        text = "<b>👤 User Help</b>\n\n1. <b>Search:</b> Type movie name.\n2. <b>Plan:</b> Check /my_plan.\n3. <b>Refer:</b> Use /referral to earn points."
-        buttons = [[InlineKeyboardButton('🔙 Back', callback_data='help')]]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-    elif data == "help_clone":
-        text = "<b>🤖 Clone Help</b>\n\n1. Go to @BotFather\n2. Create new bot & get Token.\n3. Use /clone [Token] here."
-        buttons = [[InlineKeyboardButton('🔙 Back', callback_data='help')]]
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-        
-    elif data == "help_admin":
-        if user_id not in ADMINS: return await query.answer("❌ Admins Only!", show_alert=True)
-        await admin_panel_menu(query)
-
-    # --- ADMIN SUB-MENUS ---
-    elif data.startswith("admin_"):
-        if user_id not in ADMINS: return await query.answer("❌ Admins Only!", show_alert=True)
-        await handle_admin_logic(client, query)
-
-    # --- TOGGLES ---
-    elif data == "toggle_maint":
-        if user_id not in ADMINS: return
-        conf = await db.get_config()
-        await db.update_config('is_maintenance', not conf.get('is_maintenance'))
-        await handle_admin_logic(client, query, refresh="admin_bot_settings") 
-        
-    elif data == "toggle_verify":
-        if user_id not in ADMINS: return
-        conf = await db.get_config()
-        await db.update_config('is_verify', not conf.get('is_verify'))
-        await handle_admin_logic(client, query, refresh="admin_bot_settings")
-
-    # --- STATS ---
-    elif data == "stats_refresh":
-        if user_id not in ADMINS: return await query.answer("❌ Admins Only!", show_alert=True)
-        text = await get_stats_text()
-        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="help")]]))
-
-    # --- DELETE ---
-    elif data.startswith("kill_file"):
-        if user_id not in ADMINS: return await query.answer("❌ Admins Only!", show_alert=True)
-        _, target, keyword = data.split("#", 2)
-        await query.answer("🗑️ Deleting...", show_alert=False)
-        deleted = await delete_files(keyword, target)
-        await query.message.edit_text(f"<b>✅ Deleted {deleted} Files from {target.upper()} DB!</b>")
-
-    # --- CHECK SUB ---
-    elif data.startswith("checksub"):
-        if await is_subscribed(client, query.message):
-            await query.answer("❌ You are NOT subscribed yet!", show_alert=True)
-        else:
-            await query.answer("✅ Subscribed!", show_alert=True)
-            await start(client, query.message, is_cb=True)
+    try:
+        # --- COMMON BUTTONS ---
+        if data == "close_data":
+            await query.message.delete()
             
-    # --- PREMIUM ---
-    elif data == "my_plan":
-        await plan(client, query.message, is_cb=True)
-    elif data == "buy_premium":
-        await buy_premium_cb(client, query)
+        elif data == "home_cb":
+            await start(client, query.message, is_cb=True)
+
+        elif data == "help":
+            text = script.HELP_TXT
+            buttons = [
+                [InlineKeyboardButton('👤 User', callback_data='help_user'), InlineKeyboardButton('🤖 Clone', callback_data='help_clone')],
+                [InlineKeyboardButton('👮 Admin', callback_data='help_admin')], # Logic in admin_panel.py
+                [InlineKeyboardButton('🏠 Home', callback_data='home_cb')]
+            ]
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+        elif data == "help_user":
+            text = "<b>👤 User Help</b>\n\n1. <b>Search:</b> Type movie name.\n2. <b>Plan:</b> Check /my_plan.\n3. <b>Refer:</b> Use /referral to earn points."
+            buttons = [[InlineKeyboardButton('🔙 Back', callback_data='help')]]
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+        elif data == "help_clone":
+            text = "<b>🤖 Clone Help</b>\n\n1. Go to @BotFather\n2. Create new bot & get Token.\n3. Use /clone [Token] here."
+            buttons = [[InlineKeyboardButton('🔙 Back', callback_data='help')]]
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+            
+        # "help_admin" is handled in admin_panel.py via regex
+
+        elif data == "my_plan":
+            await plan(client, query.message, is_cb=True)
+            
+        elif data == "buy_premium":
+            await buy_premium_cb(client, query)
+
+    except MessageNotModified:
+        await query.answer("⚠️ Already on this page!")
+        pass
+    except Exception as e:
+        logger.error(f"CB Error: {e}")
+        pass
 
 # ==============================================================================
-# 👮 ADMIN LOGIC
-# ==============================================================================
-async def handle_admin_logic(client, query, refresh=None):
-    data = refresh if refresh else query.data
-    conf = await db.get_config()
-    
-    if data == "admin_db_menu":
-        pri, bak, tot = await db_count_documents()
-        used, free = await db.get_db_size()
-        txt = (
-            f"<b>🗄️ DATABASE MANAGER</b>\n\n"
-            f"<b>Primary Docs:</b> {pri}\n"
-            f"<b>Backup Docs:</b> {bak}\n"
-            f"<b>Total Docs:</b> {tot}\n"
-            f"<b>Size:</b> {get_size(used)}"
-        )
-        btn = [[InlineKeyboardButton("🔙 Back", callback_data="help_admin")]]
-        await query.message.edit_text(txt, reply_markup=InlineKeyboardMarkup(btn))
-        
-    elif data == "admin_bot_settings":
-        maint = conf.get('is_maintenance')
-        verify = conf.get('is_verify')
-        txt = f"<b>🛡️ BOT SETTINGS</b>\n\n<b>Maintenance:</b> {maint}\n<b>Verify Ads:</b> {verify}"
-        btn = [
-            [InlineKeyboardButton(f"Maintenance {'✅' if maint else '❌'}", callback_data="toggle_maint")],
-            [InlineKeyboardButton(f"Verify Ads {'✅' if verify else '❌'}", callback_data="toggle_verify")],
-            [InlineKeyboardButton("🔙 Back", callback_data="help_admin")]
-        ]
-        try: await query.message.edit_text(txt, reply_markup=InlineKeyboardMarkup(btn))
-        except: pass
-        
-    elif data == "admin_payment_menu":
-        upi = UPI_ID if UPI_ID else "Not Set"
-        txt = f"<b>💰 PAYMENT SETTINGS</b>\n\n<b>UPI ID:</b> <code>{upi}</code>"
-        btn = [[InlineKeyboardButton("🔙 Back", callback_data="help_admin")]]
-        await query.message.edit_text(txt, reply_markup=InlineKeyboardMarkup(btn))
-    else:
-        await admin_panel_menu(query)
-
-async def admin_panel_menu(query):
-    conf = await db.get_config()
-    maint = "🔴" if conf.get('is_maintenance') else "🟢"
-    verify = "🟢" if conf.get('is_verify') else "🔴"
-    text = f"<b>⚙️ <u>GOD MODE CONTROL PANEL</u></b>\n\n<b>🛡️ Maintenance:</b> {maint}\n<b>🔐 Verify System:</b> {verify}\n<i>Select a module:</i>"
-    buttons = [
-        [InlineKeyboardButton("🗄️ Database", callback_data="admin_db_menu"), InlineKeyboardButton("🤖 Bot Settings", callback_data="admin_bot_settings")],
-        [InlineKeyboardButton("💰 Payments", callback_data="admin_payment_menu"), InlineKeyboardButton("🔙 Back", callback_data="help")]
-    ]
-    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-# ==============================================================================
-# 🚀 START COMMAND (REBUILT WITH ALL FEATURES)
+# 🚀 START COMMAND (WITH FILE RETRIEVAL)
 # ==============================================================================
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message, is_cb=False):
@@ -201,7 +114,7 @@ async def start(client, message, is_cb=False):
         await message.reply(f"Hello {user.mention}, Welcome to {message.chat.title}", reply_markup=InlineKeyboardMarkup(btn))
         return 
 
-    # 3. MAINTENANCE CHECK (🔥 WAS MISSING)
+    # 3. MAINTENANCE CHECK
     conf = await db.get_config()
     if conf.get('is_maintenance') and user.id not in ADMINS:
         reason = conf.get('maintenance_reason', "Updating Server...")
@@ -236,7 +149,7 @@ async def start(client, message, is_cb=False):
                     await client.send_message(ref_by, f"🎉 New Referral! +10 Points.")
             except: pass
         
-        # C. Group Settings Logic (🔥 WAS MISSING)
+        # C. Group Settings Logic
         if mc.startswith('settings_'):
              try:
                 _, group_id = mc.split("_")
@@ -246,7 +159,7 @@ async def start(client, message, is_cb=False):
                 return await message.reply(f"<b>⚙️ Settings for:</b> <code>{group_id}</code>", reply_markup=InlineKeyboardMarkup(btn))
              except: pass
 
-        # D. FILE RETRIEVAL LOGIC (🔥 FIXED & COMPLETE)
+        # D. FILE RETRIEVAL LOGIC (🔥 FIXED)
         if mc.startswith('all') or "_" in mc or mc.isdigit():
             # 1. Force Sub Check
             btn = await is_subscribed(client, message)
@@ -276,7 +189,6 @@ async def start(client, message, is_cb=False):
                 except: pass
             elif "_" in mc: # single file like 4282_9282 (legacy) or just ID
                  try:
-                    # Logic for specific encoded file if needed
                     files = [] # Placeholder for complex logic
                  except: pass
             else: # Single File ID
@@ -307,7 +219,7 @@ async def start(client, message, is_cb=False):
             
             await msg.delete()
             
-            # 5. Auto Delete Logic (🔥 WAS MISSING)
+            # 5. Auto Delete Logic
             if DELETE_TIME and DELETE_TIME > 0:
                 await asyncio.sleep(DELETE_TIME)
                 try:
@@ -325,12 +237,16 @@ async def start(client, message, is_cb=False):
     if not pics: pics = PICS
     
     buttons = [
-        [InlineKeyboardButton('👨‍🚒 Hᴇʟᴘ', callback_data='help'), InlineKeyboardButton('📊 Sᴛᴀᴛs', callback_data='stats_refresh')], 
+        [InlineKeyboardButton('👨‍🚒 Hᴇʟᴘ', callback_data='help'), InlineKeyboardButton('🤖 Clone', callback_data='help_clone')], 
         [InlineKeyboardButton('💎 Gᴏ Pʀᴇᴍɪᴜᴍ', callback_data="my_plan")]
     ]
-    
+    if user.id in ADMINS:
+        buttons.insert(0, [InlineKeyboardButton('⚡ GOD MODE PANEL ⚡', callback_data='admin_panel')])
+
     if is_cb:
-        await message.edit_text(text=txt, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        try:
+            await message.edit_text(text=txt, reply_markup=InlineKeyboardMarkup(buttons), parse_mode=enums.ParseMode.HTML)
+        except MessageNotModified: pass
     else:
         try: await message.reply_photo(photo=random.choice(pics), caption=txt, reply_markup=InlineKeyboardMarkup(buttons))
         except: await message.reply_text(text=txt, reply_markup=InlineKeyboardMarkup(buttons))
@@ -389,7 +305,9 @@ async def plan(client, message, is_cb=False):
     btn = [[InlineKeyboardButton("💰 Buy Premium", callback_data="buy_premium")]]
     if is_cb:
         btn.append([InlineKeyboardButton("🔙 Back", callback_data="start")])
-        await message.edit_text(text, reply_markup=InlineKeyboardMarkup(btn))
+        try:
+            await message.edit_text(text, reply_markup=InlineKeyboardMarkup(btn))
+        except MessageNotModified: pass
     else:
         await message.reply(text, reply_markup=InlineKeyboardMarkup(btn))
 
@@ -414,7 +332,7 @@ async def help_cmd(client, message):
     text = script.HELP_TXT
     buttons = [
         [InlineKeyboardButton('👤 User', callback_data='help_user'), InlineKeyboardButton('🤖 Clone', callback_data='help_clone')],
-        [InlineKeyboardButton('👮 Admin', callback_data='help_admin')],
+        [InlineKeyboardButton('👮 Admin', callback_data='help_admin')], # Logic in admin_panel.py
         [InlineKeyboardButton('🏠 Home', callback_data='home_cb')]
     ]
     await message.reply(text, reply_markup=InlineKeyboardMarkup(buttons))
@@ -424,7 +342,7 @@ async def about_cmd(client, message):
     await message.reply(script.ABOUT_TXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Back', callback_data='home_cb')]]))
 
 # ==============================================================================
-# 🛠️ ADMIN UTILS
+# 🛠️ ADMIN UTILS (COMMANDS)
 # ==============================================================================
 @Client.on_message(filters.command("ban") & filters.user(ADMINS))
 async def ban_cmd(bot, message):
