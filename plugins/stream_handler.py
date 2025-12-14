@@ -1,13 +1,10 @@
 import logging
+# 🔥 FIX: Add missing imports for Python Typing
+from typing import Union, Optional, AsyncGenerator 
 from hydrogram.types import Message
-from typing import Optional, AsyncGenerator
 from utils import temp
 
 logger = logging.getLogger(__name__)
-
-# --- 💡 Note: Custom DL must be imported or implemented here ---
-# Assuming custom_dl logic exists in utils or web/utils
-# from web.utils.custom_dl import TGCustomYield, chunk_size, offset_fix
 
 class StreamHandler:
     """
@@ -45,32 +42,16 @@ class StreamHandler:
         Required by web/route.py
         """
         try:
-            # 🔥 CRITICAL: You need to implement your actual file reading/chunking logic here.
-            # This is where custom_dl logic should ideally be placed.
-            
-            # --- Placeholder Logic (Replace with your TGCustomYield) ---
-            
+            # Placeholder Logic (Replace with your TGCustomYield if available)
             media = getattr(message, message.media.value, None)
             if not media:
                 raise ValueError("Message does not contain media.")
                 
-            file_id = media.file_id
-            file_size = getattr(media, "file_size", 0)
-
-            # Simple placeholder stream (You MUST replace this with your actual streaming code)
-            # Example: async for chunk in self.client.stream_media(message, offset=offset, limit=limit): yield chunk
-            
             logger.warning("Using Placeholder Stream Logic. Replace with TGCustomYield.")
             
             async for chunk in self.client.stream_media(message, offset=offset, limit=limit):
                  yield chunk
                  
-            # --- End Placeholder ---
-            
         except Exception as e:
             logger.error(f"Streaming Error in StreamHandler: {e}")
             raise e
-
-# ==============================================================================
-# 💡 Next Step: Update bot.py to use this class
-# ==============================================================================
