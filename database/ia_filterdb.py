@@ -2,7 +2,8 @@ import logging
 import re
 import asyncio
 from struct import pack
-from pyrogram.file_id import FileId
+# 🔥 FIXED: Changed 'pyrogram' to 'hydrogram' to prevent ModuleNotFoundError
+from hydrogram.file_id import FileId
 from pymongo.errors import DuplicateKeyError
 from pymongo import TEXT
 from umongo import Instance, Document, fields
