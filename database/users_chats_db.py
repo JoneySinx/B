@@ -20,31 +20,40 @@ class Database:
         self.filters = self.db.filters
         self.conf = self.db.bot_settings
         self.clones = self.db.clones
+        self.codes = self.db.redeem_codes  # 🔥 NEW: Gift/Redeem Codes
 
     # ==========================================================================
-    # ⚙️ ADMIN PANEL / DYNAMIC CONFIG
+    # ⚙️ ADMIN PANEL / DYNAMIC CONFIG (Updated for God Mode Buttons)
     # ==========================================================================
     async def get_config(self):
         config = await self.conf.find_one({'_id': 'main_config'})
         if not config:
             default_config = {
                 '_id': 'main_config',
-                'search_mode': 'hybrid',
+                'search_mode': 'hybrid',     # primary / backup / hybrid
+                'bot_mode': 'public',        # 🔥 NEW: public / admin / premium
+                'pm_search': True,           # 🔥 NEW: PM Search Toggle
+                'imdb_intg': True,           # 🔥 NEW: IMDB Toggle
+                'link_mode': False,          # 🔥 NEW: Link vs Button Result Mode (False = Button)
+                'spell_check': True,         # Global Spell Check
+                'global_auto_filter': True,  # Global Auto Filter
+                'welcome': True,             # Global Welcome Message
                 'shortlink_enable': False,
                 'shortlink_api': '',
                 'shortlink_site': '',
-                'auth_channel': None,
-                'req_channel': None,
+                'force_sub_channel': None,   # 🔥 NEW: For F-Sub Manager
+                'support_link': None,        # 🔥 NEW: Support Group Link
+                'db_index_channels': [],     # 🔥 NEW: Indexed Channels List
                 'is_maintenance': False,
                 'is_verify': False,
                 'verify_duration': 86400,
                 'is_premium_active': True,
                 'is_protect_content': True,
-                'delete_mode': 'interactive',
                 'delete_time': 300,
-                'dual_save_mode': True,
-                'disable_clone': False,
-                'points_per_referral': 10
+                'points_per_referral': 10,
+                'tpl_start_msg': None,       # Custom Start Template
+                'global_caption': None,      # Custom File Caption
+                'global_template': None      # Custom File Template
             }
             await self.conf.insert_one(default_config)
             return default_config
@@ -53,12 +62,31 @@ class Database:
     async def update_config(self, key, value):
         await self.conf.update_one({'_id': 'main_config'}, {'$set': {key: value}}, upsert=True)
 
-    # 🔥🔥 RESTORED: LEGACY SUPPORT FOR PM_FILTER.PY 🔥🔥
+    # --- LEGACY SUPPORT ---
     async def get_bot_sttgs(self):
-        """
-        Required by pm_filter.py to check if Auto Filter is ON.
-        """
         return {'AUTO_FILTER': True}
+    
+    # --- INDEX CHANNELS ---
+    async def add_index_channel(self, chat_id):
+        await self.conf.update_one({'_id': 'main_config'}, {'$addToSet': {'db_index_channels': int(chat_id)}}, upsert=True)
+
+
+    # ==========================================================================
+    # 🎁 REDEEM CODES (GIFT SYSTEM)
+    # ==========================================================================
+    async def create_code(self, code, value_seconds):
+        await self.codes.insert_one({
+            'code': code,
+            'duration': value_seconds,
+            'created_at': datetime.datetime.now()
+        })
+
+    async def get_code(self, code):
+        return await self.codes.find_one({'code': code})
+
+    async def delete_code(self, code):
+        await self.codes.delete_one({'code': code})
+
 
     # ==========================================================================
     # 👤 USER MANAGEMENT
@@ -154,7 +182,14 @@ class Database:
     async def get_settings(self, chat_id):
         chat = await self.get_chat(chat_id)
         if chat: return chat.get('settings', {})
-        return {'auto_filter': True, 'spell_check': True, 'welcome': True}
+        # Returning Global Defaults if chat not found
+        conf = await self.get_config()
+        return {
+            'auto_filter': conf.get('global_auto_filter', True), 
+            'spell_check': conf.get('spell_check', True), 
+            'welcome': conf.get('welcome', True)
+        }
+
 
     async def update_settings(self, chat_id, settings):
         await self.grp.update_one({'id': int(chat_id)}, {'$set': {'settings': settings}})
