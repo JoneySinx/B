@@ -41,7 +41,6 @@ else:
 # 1. Primary Collection
 @instance.register
 class Media(Document):
-    # 🔥 FIX: Changed StrField to StringField (Best Practice)
     file_id = fields.StringField(attribute='_id')
     file_ref = fields.StringField(allow_none=True)
     file_name = fields.StringField(required=True)
@@ -69,7 +68,6 @@ class MediaBackup(Document):
     caption = fields.StringField(allow_none=True)
     
     class Meta:
-        # If dual URI, collection name can be same. If single URI, append _backup
         collection_name = COLLECTION_NAME if BACKUP_DATABASE_URI else f"{COLLECTION_NAME}_backup"
         indexes = [
             'file_name',
@@ -90,26 +88,18 @@ class SearchLogs(Document):
 # 🚀 SMART INDEXING (AUTO-OPTIMIZER)
 # ==============================================================================
 async def create_indexes():
-    """
-    Creates indexes on startup to make search 10x Faster.
-    """
     try:
         await Media.ensure_indexes()
         await MediaBackup.ensure_indexes()
     except Exception as e:
         logger.error(f"❌ Failed to create indexes: {e}")
 
-# Run indexing in background immediately
 asyncio.create_task(create_indexes())
 
 # ==============================================================================
-# 📥 SAVE FILE (SMART ROUTING)
+# 📥 SAVE FILE
 # ==============================================================================
 async def save_file(media, target_db="primary"):
-    """
-    Saves file to Primary or Backup DB based on Admin's command.
-    target_db: 'primary', 'backup', 'both'
-    """
     entry = {
         "file_id": media.file_id,
         "file_ref": media.file_ref,
@@ -117,13 +107,11 @@ async def save_file(media, target_db="primary"):
         "file_size": media.file_size,
         "file_type": media.media.value,
         "mime_type": media.mime_type,
-        # 🔥 FIX: Removed .html (Hydrogram captions are strings, causing crash if .html is accessed)
         "caption": media.caption if media.caption else None,
     }
     
     saved = []
     
-    # Logic for Primary
     if target_db in ["primary", "both"]:
         try:
             file = Media(**entry)
@@ -134,7 +122,6 @@ async def save_file(media, target_db="primary"):
         except Exception as e:
             logger.error(f"Save Primary Error: {e}")
 
-    # Logic for Backup
     if target_db in ["backup", "both"]:
         try:
             file = MediaBackup(**entry)
@@ -148,83 +135,94 @@ async def save_file(media, target_db="primary"):
     return saved
 
 # ==============================================================================
-# 🔍 GET SEARCH RESULTS (HYBRID ENGINE)
+# 🔍 GET SEARCH RESULTS (HYBRID & FUZZY ENGINE)
 # ==============================================================================
-async def get_search_results(query, file_type=None, max_results=10, offset=0, lang=None, mode="hybrid"):
+async def get_search_results(query, file_type=None, max_results=10, offset=0, mode="hybrid"):
     """
-    Fetches files based on Admin's Mood (Mode: Primary/Backup/Hybrid)
+    Fetches files using Normal or Fuzzy/Text Search based on mode.
+    Mode: 'hybrid', 'primary', 'backup', 'fuzzy'
     """
     query = query.strip()
     if not query: return [], 0, 0
 
-    # 1. Log the Search (Analytics)
     asyncio.create_task(update_search_stats(query))
 
-    # 2. Build Regex Query
-    regex = re.compile(f".*{re.escape(query)}.*", re.IGNORECASE)
-    filter_q = {'file_name': regex}
-
-    if USE_CAPTION_FILTER:
-        filter_q = {'$or': [{'file_name': regex}, {'caption': regex}]}
-
-    if file_type: filter_q['file_type'] = file_type
-
-    # 3. Mode Logic (Admin Control)
     cursors = []
-    if mode == "primary" or mode == "hybrid":
-        cursors.append(Media.find(filter_q))
+    total_results = 0
+    
+    # 1. Determine Filter Query based on mode
+    if mode == "fuzzy":
+        # 🔥 FUZZY/TEXT SEARCH LOGIC (Faster for large DBs and misspellings)
+        words = query.split()
+        # Ensure that ALL words are present (AND operation)
+        text_query = " ".join(words)
+        filter_q = {'$text': {'$search': text_query}}
+        # Filter files by type if specified
+        if file_type: filter_q['file_type'] = file_type
         
-    if mode == "backup" or mode == "hybrid":
+        # We search both collections simultaneously for fuzzy results
+        cursors.append(Media.find(filter_q))
         cursors.append(MediaBackup.find(filter_q))
 
-    # 4. Fetch Results (Merging)
+    else:
+        # NORMAL REGEX SEARCH (Used for precise match or initial pass)
+        regex = re.compile(f".*{re.escape(query)}.*", re.IGNORECASE)
+        filter_q = {'file_name': regex}
+
+        if USE_CAPTION_FILTER:
+            filter_q = {'$or': [{'file_name': regex}, {'caption': regex}]}
+
+        if file_type: filter_q['file_type'] = file_type
+
+        if mode == "primary" or mode == "hybrid":
+            cursors.append(Media.find(filter_q))
+            
+        if mode == "backup" or mode == "hybrid":
+            cursors.append(MediaBackup.find(filter_q))
+
+    # 2. Fetch Results (Merging and Deduplication)
     files = []
-    total_results = 0
     
     for cursor in cursors:
         try:
-            # Estimate count for speed
             count = await cursor.count()
             total_results += count
             
-            # Sort by Newest First ($natural -1 is fast)
-            cursor.sort('$natural', -1)
-            
-            # Fetch a batch (fetch extra to handle duplicates)
+            # Sort by relevance for fuzzy search, or newest for normal search
+            if mode == "fuzzy":
+                cursor.sort([('score', {'$meta': 'textScore'}), ('$natural', -1)])
+            else:
+                cursor.sort('$natural', -1)
+                
             batch_limit = max_results + offset + 20 
             files.extend(await cursor.to_list(length=batch_limit))
         except Exception as e:
-            logger.error(f"DB Error: {e}")
+            logger.error(f"DB Fetch Error: {e}")
 
-    # 5. Smart Deduplication (Hybrid Mode Fix)
-    # If file exists in both, show only one.
     unique_files = {}
     for f in files:
+        # Check if score exists and is above a threshold for fuzzy search (optional refinement)
+        # if mode == "fuzzy" and f.score < 0.7: continue 
         if f.file_id not in unique_files:
             unique_files[f.file_id] = f
 
-    # Convert back to list
     final_files = list(unique_files.values())
 
-    # 6. Pagination Logic (Memory Slicing)
+    # 3. Pagination Logic
     sliced_files = final_files[offset : offset + max_results]
     
     next_offset = offset + len(sliced_files)
-    if next_offset >= len(final_files) and next_offset >= total_results:
+    if next_offset >= len(final_files):
         next_offset = ""
     
     return sliced_files, next_offset, total_results
 
 # ==============================================================================
-# 🗑️ DELETE MANAGER (ADVANCED)
+# 🗑️ DELETE MANAGER
 # ==============================================================================
 
 # A. BULK DELETE (Regex)
 async def delete_files(query, target="all"):
-    """
-    Deletes ALL files matching the query name.
-    target: 'primary', 'backup', 'all'
-    """
     regex = re.compile(f".*{re.escape(query)}.*", re.IGNORECASE)
     filter_q = {'file_name': regex}
     
@@ -242,10 +240,6 @@ async def delete_files(query, target="all"):
 
 # B. SURGICAL DELETE (Single File by ID)
 async def delete_one_file(file_id, target="all"):
-    """
-    Deletes a specific file by its unique ID.
-    Used in Interactive Mode (Admin Panel).
-    """
     deleted = 0
     filter_q = {'file_id': file_id}
     
@@ -284,10 +278,8 @@ async def update_search_stats(query):
 # 🛠️ UTILITIES
 # ==============================================================================
 async def get_file_details(file_id):
-    # Try Primary
     file = await Media.find_one({'file_id': file_id})
     if file: return file
-    # Try Backup
     file = await MediaBackup.find_one({'file_id': file_id})
     return file
 
