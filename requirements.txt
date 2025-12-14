@@ -13,6 +13,7 @@ dnspython           # DNS toolkit
 aiohttp             # Async Web Server & HTTP Client
 aiofiles            # Async File I/O
 requests            # Synchronous HTTP calls
+psutil
 
 # --- 🚀 Performance Boosters ---
 uvloop              # Ultra fast event loop
