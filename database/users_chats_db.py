@@ -54,14 +54,13 @@ class Database:
         await self.conf.update_one({'_id': 'main_config'}, {'$set': {key: value}}, upsert=True)
 
     # ==========================================================================
-    # 👤 USER MANAGEMENT (🔥 FIXED DATE ERROR)
+    # 👤 USER MANAGEMENT (FIXED STATS & DATE)
     # ==========================================================================
     async def new_user(self, id, name):
         return {
             'id': id,
             'name': name,
-            # 🔥 FIX: Removed .date() -> Now using full datetime object
-            'join_date': datetime.datetime.now(), 
+            'join_date': datetime.datetime.now(), # 🔥 Fixed Date Error
             'balance': 0,
             'ban_status': {'is_banned': False, 'ban_reason': ''}
         }
@@ -84,7 +83,11 @@ class Database:
     async def delete_user(self, user_id):
         await self.col.delete_many({'id': int(user_id)})
 
-    # --- POINT SYSTEM METHODS ---
+    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
+    async def total_users_count(self):
+        return await self.col.count_documents({})
+
+    # --- POINT SYSTEM ---
     async def inc_balance(self, user_id, amount=10):
         await self.col.update_one({'id': int(user_id)}, {'$inc': {'balance': amount}})
 
@@ -150,6 +153,7 @@ class Database:
     async def update_settings(self, chat_id, settings):
         await self.grp.update_one({'id': int(chat_id)}, {'$set': {'settings': settings}})
 
+    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
     async def total_chat_count(self):
         return await self.grp.count_documents({})
 
@@ -184,6 +188,10 @@ class Database:
 
     async def get_premium_users(self):
         return self.prm.find({'status.premium': True})
+    
+    # 🔥🔥 THIS WAS MISSING - FIXED NOW 🔥🔥
+    async def get_premium_count(self):
+        return await self.prm.count_documents({'status.premium': True})
 
     # ==========================================================================
     # 🔐 VERIFICATION STATUS
@@ -245,7 +253,7 @@ class Database:
         await self.filters.delete_many({'chat_id': chat_id})
 
     # ==========================================================================
-    # 💾 DB SIZE UTILS
+    # 💾 DB SIZE UTILS (🔥 WAS MISSING - FIXED)
     # ==========================================================================
     async def get_db_size(self):
         try:
