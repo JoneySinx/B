@@ -6,7 +6,7 @@ TgCrypto            # MTProto Speed Booster
 motor               # Async MongoDB Driver
 pymongo             # Standard MongoDB Driver
 umongo              # ODM for Schemas
-marshmallow<3.13.0  # 🔥 FIXED: Version locked to prevent crash!
+marshmallow<3.13.0  # 🔥 CRITICAL FIX: Do not change this version!
 dnspython           # DNS toolkit
 
 # --- 🌍 Web Server & Networking ---
@@ -20,6 +20,7 @@ ujson               # Ultra fast JSON parser
 
 # --- 🖼️ Media & Utilities ---
 Pillow              # Image Processing
+qrcode              # 🔥 ADDED: For Payment QR Generation
 beautifulsoup4      # HTML Parsing
 pytz                # Timezone Handling
 python-dotenv       # Loading .env files locally
