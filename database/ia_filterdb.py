@@ -5,7 +5,6 @@ from struct import pack
 from hydrogram.file_id import FileId
 from pymongo.errors import DuplicateKeyError
 from pymongo import TEXT
-# 🔥 FIX: Specific Import for Motor AsyncIO to fix "Abstract Method" error
 from umongo.frameworks.motor_asyncio import MotorAsyncIOInstance as Instance
 from umongo import Document, fields
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -52,8 +51,8 @@ class Media(Document):
     class Meta:
         collection_name = COLLECTION_NAME
         indexes = [
-            'file_name', # Normal Index
-            ('file_name', TEXT) # Text Index for Fast Search
+            'file_name', 
+            ('file_name', TEXT)
         ]
 
 # 2. Backup Collection (Dual DB)
@@ -101,43 +100,26 @@ asyncio.create_task(create_indexes())
 # ==============================================================================
 async def save_file(media, target_db="primary"):
     entry = {
-        "file_id": media.file_id,
-        "file_ref": media.file_ref,
-        "file_name": media.file_name,
-        "file_size": media.file_size,
-        "file_type": media.media.value,
-        "mime_type": media.mime_type,
+        "file_id": media.file_id, "file_ref": media.file_ref, "file_name": media.file_name,
+        "file_size": media.file_size, "file_type": media.media.value, "mime_type": media.mime_type,
         "caption": media.caption if media.caption else None,
     }
-    
     saved = []
-    
     if target_db in ["primary", "both"]:
-        try:
-            file = Media(**entry)
-            await file.commit()
-            saved.append('primary')
-        except DuplicateKeyError:
-            saved.append('primary_dup')
-        except Exception as e:
-            logger.error(f"Save Primary Error: {e}")
-
+        try: file = Media(**entry); await file.commit(); saved.append('primary')
+        except DuplicateKeyError: saved.append('primary_dup')
+        except Exception as e: logger.error(f"Save Primary Error: {e}")
     if target_db in ["backup", "both"]:
-        try:
-            file = MediaBackup(**entry)
-            await file.commit()
-            saved.append('backup')
-        except DuplicateKeyError:
-            saved.append('backup_dup')
-        except Exception as e:
-            logger.error(f"Save Backup Error: {e}")
+        try: file = MediaBackup(**entry); await file.commit(); saved.append('backup')
+        except DuplicateKeyError: saved.append('backup_dup')
+        except Exception as e: logger.error(f"Save Backup Error: {e}")
             
     return saved
 
 # ==============================================================================
-# 🔍 GET SEARCH RESULTS (HYBRID & FUZZY ENGINE)
+# 🔍 GET SEARCH RESULTS (FIXED .count() ERROR)
 # ==============================================================================
-async def get_search_results(query, file_type=None, max_results=10, offset=0, mode="hybrid"):
+async def get_search_results(query, file_type=None, max_results=10, offset=0, mode="hybrid", lang=None):
     """
     Fetches files using Normal or Fuzzy/Text Search based on mode.
     Mode: 'hybrid', 'primary', 'backup', 'fuzzy'
@@ -147,72 +129,48 @@ async def get_search_results(query, file_type=None, max_results=10, offset=0, mo
 
     asyncio.create_task(update_search_stats(query))
 
-    cursors = []
-    total_results = 0
+    collections_to_search = []
     
     # 1. Determine Filter Query based on mode
+    filter_q = {}
     if mode == "fuzzy":
-        # 🔥 FUZZY/TEXT SEARCH LOGIC (Faster for large DBs and misspellings)
-        words = query.split()
-        # Ensure that ALL words are present (AND operation)
-        text_query = " ".join(words)
-        filter_q = {'$text': {'$search': text_query}}
-        # Filter files by type if specified
-        if file_type: filter_q['file_type'] = file_type
-        
-        # We search both collections simultaneously for fuzzy results
-        cursors.append(Media.find(filter_q))
-        cursors.append(MediaBackup.find(filter_q))
-
+        words = query.split(); text_query = " ".join(words); filter_q = {'$text': {'$search': text_query}}
     else:
-        # NORMAL REGEX SEARCH (Used for precise match or initial pass)
         regex = re.compile(f".*{re.escape(query)}.*", re.IGNORECASE)
         filter_q = {'file_name': regex}
+        if USE_CAPTION_FILTER: filter_q = {'$or': [{'file_name': regex}, {'caption': regex}]}
 
-        if USE_CAPTION_FILTER:
-            filter_q = {'$or': [{'file_name': regex}, {'caption': regex}]}
+    if file_type: filter_q['file_type'] = file_type
+    if lang: filter_q['file_name'] = re.compile(f".*{re.escape(lang)}.*", re.IGNORECASE)
 
-        if file_type: filter_q['file_type'] = file_type
+    # 2. Select Collections
+    if mode in ["primary", "hybrid", "fuzzy"]: collections_to_search.append(Media)
+    if mode in ["backup", "hybrid", "fuzzy"]: collections_to_search.append(MediaBackup)
 
-        if mode == "primary" or mode == "hybrid":
-            cursors.append(Media.find(filter_q))
-            
-        if mode == "backup" or mode == "hybrid":
-            cursors.append(MediaBackup.find(filter_q))
-
-    # 2. Fetch Results (Merging and Deduplication)
+    # 3. Fetch Results (Merging and Deduplication)
     files = []
     
-    for cursor in cursors:
+    for Collection in collections_to_search:
+        cursor = Collection.find(filter_q)
         try:
-            count = await cursor.count()
-            total_results += count
-            
-            # Sort by relevance for fuzzy search, or newest for normal search
-            if mode == "fuzzy":
-                cursor.sort([('score', {'$meta': 'textScore'}), ('$natural', -1)])
-            else:
-                cursor.sort('$natural', -1)
+            # Apply sort order
+            if mode == "fuzzy": cursor.sort([('score', {'$meta': 'textScore'}), ('$natural', -1)])
+            else: cursor.sort('$natural', -1)
                 
-            batch_limit = max_results + offset + 20 
-            files.extend(await cursor.to_list(length=batch_limit))
+            # Fetch a large enough batch (e.g., 2000) for accurate pagination
+            files.extend(await cursor.to_list(length=2000)) 
         except Exception as e:
-            logger.error(f"DB Fetch Error: {e}")
+            logger.error(f"DB Fetch Error in loop: {e}")
 
-    unique_files = {}
-    for f in files:
-        # Check if score exists and is above a threshold for fuzzy search (optional refinement)
-        # if mode == "fuzzy" and f.score < 0.7: continue 
-        if f.file_id not in unique_files:
-            unique_files[f.file_id] = f
-
+    # 4. Smart Deduplication
+    unique_files = {}; [unique_files.update({f.file_id: f}) for f in files if f.file_id not in unique_files]
     final_files = list(unique_files.values())
+    total_results = len(final_files) # 🔥 CORRECT WAY TO GET TOTAL COUNT
 
-    # 3. Pagination Logic
+    # 5. Pagination Logic
     sliced_files = final_files[offset : offset + max_results]
-    
     next_offset = offset + len(sliced_files)
-    if next_offset >= len(final_files):
+    if next_offset >= total_results:
         next_offset = ""
     
     return sliced_files, next_offset, total_results
@@ -225,51 +183,41 @@ async def get_search_results(query, file_type=None, max_results=10, offset=0, mo
 async def delete_files(query, target="all"):
     regex = re.compile(f".*{re.escape(query)}.*", re.IGNORECASE)
     filter_q = {'file_name': regex}
-    
     deleted = 0
-    
-    if target in ["primary", "all"]:
-        r1 = await Media.collection.delete_many(filter_q)
-        deleted += r1.deleted_count
-        
-    if target in ["backup", "all"]:
-        r2 = await MediaBackup.collection.delete_many(filter_q)
-        deleted += r2.deleted_count
-        
+    if target in ["primary", "all"]: r1 = await Media.collection.delete_many(filter_q); deleted += r1.deleted_count
+    if target in ["backup", "all"]: r2 = await MediaBackup.collection.delete_many(filter_q); deleted += r2.deleted_count
     return deleted
 
 # B. SURGICAL DELETE (Single File by ID)
 async def delete_one_file(file_id, target="all"):
     deleted = 0
     filter_q = {'file_id': file_id}
-    
-    if target in ["primary", "all"]:
-        r1 = await Media.collection.delete_one(filter_q)
-        deleted += r1.deleted_count
-        
-    if target in ["backup", "all"]:
-        r2 = await MediaBackup.collection.delete_one(filter_q)
-        deleted += r2.deleted_count
-        
+    if target in ["primary", "all"]: r1 = await Media.collection.delete_one(filter_q); deleted += r1.deleted_count
+    if target in ["backup", "all"]: r2 = await MediaBackup.collection.delete_one(filter_q); deleted += r2.deleted_count
     return deleted
+
+# 🔥 C. DELETE ALL FILTERS (Required for /delete_all cmd)
+async def delete_all_filters():
+    count_pri = await Media.count_documents({})
+    count_bak = await MediaBackup.count_documents({})
+    
+    await Media.collection.delete_many({})
+    await MediaBackup.collection.delete_many({})
+    
+    return count_pri + count_bak
 
 # ==============================================================================
 # 📊 ANALYTICS SYSTEM
 # ==============================================================================
 async def update_search_stats(query):
-    """
-    Tracks what users are searching for.
-    """
+    """Tracks what users are searching for."""
     try:
         clean_q = re.sub(r'[^\w\s]', '', query).lower().strip()
         if len(clean_q) < 3: return 
 
         await SearchLogs.collection.update_one(
             {'_id': clean_q},
-            {
-                '$inc': {'count': 1}, 
-                '$set': {'last_searched': datetime.now()}
-            },
+            {'$inc': {'count': 1}, '$set': {'last_searched': datetime.now()}},
             upsert=True
         )
     except: pass
