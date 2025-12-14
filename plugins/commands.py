@@ -13,7 +13,7 @@ from hydrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from hydrogram.errors import MessageNotModified
 
 from Script import script
-from database.ia_filterdb import get_file_details
+from database.ia_filterdb import get_file_details, delete_all_filters # 🔥 ADDED delete_all_filters
 from database.users_chats_db import db
 from info import ADMINS, UPDATES_LINK, PICS, IS_STREAM, UPI_ID, UPI_NAME, RECEIPT_SEND_USERNAME, URL, DELETE_TIME
 from utils import (
@@ -26,8 +26,6 @@ logger = logging.getLogger(__name__)
 # ==============================================================================
 # 🎮 USER CALLBACK HANDLER
 # ==============================================================================
-# यह सिर्फ User वाले बटन सुनेगा (Home, Help, Plan, Close)
-# Admin वाले बटन (admin_*, toggle_*) admin_panel.py हैंडल करेगा।
 @Client.on_callback_query(filters.regex(r"^(home_cb|help|close_data|my_plan|buy_premium|help_)"))
 async def user_cb_handler(client, query):
     data = query.data
@@ -349,3 +347,38 @@ async def link_cmd(client, message):
     if not msg: return await message.reply("Reply to a file.")
     link = f"{URL}watch/{msg.id}"
     await message.reply(f"<b>🔗 Direct Link:</b>\n{link}")
+
+# ==============================================================================
+# 🔥 ADMIN COMMANDS: /delete_all (God Mode Tool)
+# ==============================================================================
+@Client.on_message(filters.command("delete_all") & filters.private & filters.user(ADMINS))
+async def delete_all_filters_cmd(client, message):
+    await message.reply(
+        "<b>⚠️ WARNING: Are you sure you want to delete ALL filters from the database? This action is irreversible!</b>",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔥 YES, Delete Everything", callback_data="purge_confirm_all_cmd")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="close_data")]
+        ]),
+        parse_mode=enums.ParseMode.HTML
+    )
+
+@Client.on_callback_query(filters.regex(r"^purge_confirm_all_cmd"))
+async def purge_confirm_all_cmd_cb(client, query):
+    if query.from_user.id not in ADMINS:
+        return await query.answer("🛑 Access Denied!", show_alert=True)
+    
+    await query.message.edit_text("<b>🗑️ Deleting all filters... Please wait.</b>", parse_mode=enums.ParseMode.HTML)
+    
+    try:
+        # Calls the function from database/ia_filterdb.py
+        count = await delete_all_filters()
+        
+        await query.message.edit_text(f"<b>✅ ALL Filters Deleted Successfully!</b>\n\n🗑️ Total {count} items removed.", parse_mode=enums.ParseMode.HTML)
+        
+        await asyncio.sleep(5)
+        try: await query.message.delete()
+        except: pass
+        
+    except Exception as e:
+        logger.error(f"Error deleting all filters: {e}")
+        await query.message.edit_text(f"<b>❌ Error during deletion:</b> <code>{e}</code>", parse_mode=enums.ParseMode.HTML)
